@@ -316,7 +316,7 @@ namespace Chess
         {
             bool isAIStartingTurn = false;  // Set to true if AI starts, false otherwise
             ChessAI ai = new ChessAI(false, chessBoard, isAIStartingTurn);  // Assuming AI plays black
-            Move bestMove = ai.FindBestMove(3);  // Depth 3 for example
+            Move bestMove = ai.FindBestMove(4);  // Depth 3 for example
 
             if (bestMove != null)
             {
@@ -725,6 +725,7 @@ namespace Chess
 
         private void Button_Click(object sender, EventArgs e)
         {
+            Debug.WriteLine(chessBoard.IsWhiteTurn);
             Button clickedButton = sender as Button;
             int x = clickedButton.Location.X / 60;
             int y = clickedButton.Location.Y / 60;
@@ -809,7 +810,6 @@ namespace Chess
                 if (c is Button button && button.Text != "Restart" && button.Text != "Quit")
                 {
                     button.Enabled = true;
-                    button.Click += new EventHandler(Button_Click);
                 }
             }
         }
