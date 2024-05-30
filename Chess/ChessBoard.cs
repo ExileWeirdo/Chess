@@ -7,7 +7,7 @@ namespace Chess
     public class ChessBoard
     {
         public ChessPiece[,] Board { get; private set; }
-        public bool IsWhiteTurn { get; private set; }
+        public bool IsWhiteTurn { get; set; }
         public List<ChessPiece> CapturedWhitePieces { get; private set; }
         public List<ChessPiece> CapturedBlackPieces { get; private set; }
 
@@ -18,6 +18,33 @@ namespace Chess
             CapturedBlackPieces = new List<ChessPiece>();
             InitializeBoard();
         }
+        public void MakeMove(Move move)
+        {
+            int startX = move.StartX;
+            int startY = move.StartY;
+            int endX = move.EndX;
+            int endY = move.EndY;
+
+            ChessPiece piece = Board[startX, startY];
+            ChessPiece capturedPiece = Board[endX, endY];
+
+            // Store the captured piece in the move object
+            move.CapturedPiece = capturedPiece;
+
+            if (capturedPiece != null)
+            {
+                if (capturedPiece.IsWhite)
+                    CapturedWhitePieces.Add(capturedPiece);
+                else
+                    CapturedBlackPieces.Add(capturedPiece);
+            }
+
+            Board[endX, endY] = piece;
+            Board[startX, startY] = null;
+
+            IsWhiteTurn = !IsWhiteTurn;
+        }
+
 
         public void InitializeBoard()
         {

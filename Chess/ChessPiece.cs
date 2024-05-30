@@ -2,14 +2,27 @@
 
 namespace Chess
 {
+    public enum PieceType
+    {
+        Pawn,
+        Knight,
+        Bishop,
+        Rook,
+        Queen,
+        King
+    }
     public abstract class ChessPiece
     {
+        public PieceType Type { get; set; }
+
         public bool IsWhite { get; private set; }
 
         protected ChessPiece(bool isWhite)
         {
+            Type = Type;
             IsWhite = isWhite;
         }
+
 
         public abstract bool IsValidMove(ChessPiece[,] board, int startX, int startY, int endX, int endY);
     }
