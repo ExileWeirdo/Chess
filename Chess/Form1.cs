@@ -237,7 +237,7 @@ namespace Chess
             UpdateBoardUI();
 
 
-
+            
         }
 
 
@@ -255,40 +255,25 @@ namespace Chess
 
             // Define the value of each chess piece
             Dictionary<Type, int> pieceValues = new Dictionary<Type, int>
-            {
-                { typeof(Pawn), 1 },
-                { typeof(Knight), 3 },
-                { typeof(Bishop), 3 },
-                { typeof(Rook), 5 },
-                { typeof(Queen), 9 },
-                { typeof(King), 100 } // King's value is high to prioritize checkmate
-            };
+    {
+        { typeof(Pawn), 1 },
+        { typeof(Knight), 3 },
+        { typeof(Bishop), 3 },
+        { typeof(Rook), 5 },
+        { typeof(Queen), 9 },
+        { typeof(King), 100 } // King's value is high to prioritize checkmate
+    };
 
-            bool isInCheck = chessBoard.IsInCheck(false); // Check if AI's king is in check (assuming AI is black)
+            // Find capturing moves with the highest value difference
+            int maxDifference = int.MinValue;
+            (int startX, int startY, int endX, int endY) bestMove = (0, 0, 0, 0);
 
             if (isInCheck)
             {
                 List<(int startX, int startY, int endX, int endY)> defendMoves = GetDefensiveMovesForAI();
                 if (defendMoves.Count > 0)
                 {
-                    // Randomly select a defensive move
-                    Random rand = new Random();
-                    var defensiveMove = defendMoves[rand.Next(defendMoves.Count)];
-                    chessBoard.MovePiece(defensiveMove.startX, defensiveMove.startY, defensiveMove.endX, defensiveMove.endY);
-                    UpdateBoardUI();
-                    return;
-                }
-            }
-
-            int maxDifference = int.MinValue;
-            (int startX, int startY, int endX, int endY) bestMove = availableMoves[0];
-
-            foreach (var move in availableMoves)
-            {
-                ChessPiece targetPiece = chessBoard.Board[move.endX, move.endY];
-                if (targetPiece != null && targetPiece.IsWhite != chessBoard.IsWhiteTurn)
-                {
-                    int valueDifference = pieceValues[targetPiece.GetType()] - pieceValues[chessBoard.Board[move.startX, move.startY].GetType()];
+                    int valueDifference = pieceValues[typeof(ChessPiece)] - pieceValues[targetPiece.GetType()];
                     if (valueDifference > maxDifference)
                     {
                         maxDifference = valueDifference;
@@ -297,206 +282,67 @@ namespace Chess
                 }
             }
 
-            // If no capturing moves found, select a random move
-            if (maxDifference == int.MinValue)
+            // If no capturing moves found, prioritize threatening opponent pieces
+            if (maxDifference <= 0)
             {
-                Random rand = new Random();
-                bestMove = availableMoves[rand.Next(availableMoves.Count)];
+                foreach (var move in availableMoves)
+                {
+                    ChessPiece targetPiece = chessBoard.Board[move.endX, move.endY];
+                    if (targetPiece != null && targetPiece.IsWhite != chessBoard.IsWhiteTurn)
+                    {
+                        int valueDifference = pieceValues[typeof(ChessPiece)] - pieceValues[targetPiece.GetType()];
+                        if (valueDifference >= 0)
+                        {
+                            maxDifference = valueDifference;
+                            bestMove = move;
+                            break; // Break after finding the first threatening move
+                        }
+                    }
+                }
             }
 
             // Execute the best move found
-            chessBoard.MovePiece(bestMove.startX, bestMove.startY, bestMove.endX, bestMove.endY);
+            if (maxDifference > 0)
+            {
+                chessBoard.MovePiece(bestMove.startX, bestMove.startY, bestMove.endX, bestMove.endY);
+            }
+            else
+            {
+                // If no capturing or threatening moves available, move a random piece
+                var randomMove = availableMoves[new Random().Next(availableMoves.Count)];
+                chessBoard.MovePiece(randomMove.startX, randomMove.startY, randomMove.endX, randomMove.endY);
+            }
 
-            // Update the board UI
-            UpdateBoardUI();
+            bool isInCheck = chessBoard.IsInCheck(false); // Check if AI's king is in check
+
+            if (isInCheck)
+            {
+                List<(int startX, int startY, int endX, int endY)> defendMoves = GetDefensiveMovesForAI();
+
+                if (defendMoves.Count > 0)
+                {
+                    // If there are defensive moves available, prioritize those
+                    Random rand = new Random();
+                    var move = defendMoves[rand.Next(defendMoves.Count)];
+
+                    chessBoard.MovePiece(move.startX, move.startY, move.endX, move.endY);
+                    UpdateBoardUI();
+                    return;
+                }
+            }
+
+            // If no defensive moves available or AI is not in check, proceed with normal move selection
+            
+            if (availableMoves.Count == 0)
+            {
+
+
+                UpdateBoardUI();
+            }
         }
         private void MakeHardAIMove()
         {
-            bool isAIStartingTurn = false;  // Set to true if AI starts, false otherwise
-            ChessAI ai = new ChessAI(false, chessBoard, isAIStartingTurn);  // Assuming AI plays black
-            Move bestMove = ai.FindBestMove(3);  // Depth 3 for example
-
-            if (bestMove != null)
-            {
-                chessBoard.MakeMove(bestMove);
-            }
-            UpdateBoardUI();
-        }
-
-
-        public class ChessAI
-        {
-            public bool IsWhite { get; private set; }
-            public ChessBoard Board { get; private set; }
-            public bool IsWhiteTurn { get; set; }  // Change to set so it can be modified
-
-            public ChessAI(bool isWhite, ChessBoard board, bool isAIStartingTurn)
-            {
-                IsWhite = isWhite;
-                Board = board;
-                IsWhiteTurn = isAIStartingTurn;
-            }
-
-            public void UndoMove(Move move)
-            {
-                int startX = move.StartX;
-                int startY = move.StartY;
-                int endX = move.EndX;
-                int endY = move.EndY;
-
-                ChessPiece movedPiece = Board.Board[endX, endY];
-                ChessPiece capturedPiece = move.CapturedPiece; // Assume the move object contains information about the captured piece
-
-                // Restore the moved piece to its original position
-                Board.Board[endX, endY] = null;
-                Board.Board[startX, startY] = movedPiece;
-
-                // If a piece was captured, restore it to its original position
-                if (capturedPiece != null)
-                {
-                    Board.Board[endX, endY] = capturedPiece;
-                    // Update the captured pieces list accordingly
-                    if (capturedPiece.IsWhite)
-                    {
-                        Board.CapturedWhitePieces.Remove(capturedPiece);
-                    }
-                    else
-                    {
-                        Board.CapturedBlackPieces.Remove(capturedPiece);
-                    }
-                }
-
-                // Toggle the turn after undoing the move
-                IsWhiteTurn = !IsWhiteTurn;
-            }
-
-
-            public Move FindBestMove(int depth)
-            {
-                Move bestMove = null;
-                int bestScore = int.MinValue;
-
-                List<Move> possibleMoves = GenerateMoves();
-
-                foreach (Move move in possibleMoves)
-                {
-                    Board.MakeMove(move);
-                    int score = Minimax(depth - 1, false); // Assuming AI is maximizing player
-                    UndoMove(move);
-
-                    if (score > bestScore)
-                    {
-                        bestScore = score;
-                        bestMove = move;
-                    }
-                }
-
-                return bestMove;
-            }
-
-            private List<Move> GenerateMoves()
-            {
-                List<Move> possibleMoves = new List<Move>();
-
-                // Iterate over the board to generate all possible moves
-                for (int startX = 0; startX < 8; startX++)
-                {
-                    for (int startY = 0; startY < 8; startY++)
-                    {
-                        ChessPiece piece = Board.Board[startX, startY];
-                        if (piece != null && piece.IsWhite == IsWhite)
-                        {
-                            // Generate moves for each piece
-                            for (int endX = 0; endX < 8; endX++)
-                            {
-                                for (int endY = 0; endY < 8; endY++)
-                                {
-                                    if (piece.IsValidMove(Board.Board, startX, startY, endX, endY))
-                                    {
-                                        possibleMoves.Add(new Move(startX, startY, endX, endY));
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-
-                return possibleMoves;
-            }
-            private int Minimax(int depth, bool isMaximizingPlayer)
-            {
-                if (depth == 0)
-                {
-                    return EvaluateBoard();
-                }
-
-                List<Move> possibleMoves = GenerateMoves();
-
-                if (isMaximizingPlayer)
-                {
-                    int maxEval = int.MinValue;
-                    foreach (Move move in possibleMoves)
-                    {
-                        Board.MakeMove(move);
-                        int eval = Minimax(depth - 1, false);
-                        UndoMove(move);
-                        maxEval = Math.Max(maxEval, eval);
-                    }
-                    return maxEval;
-                }
-                else
-                {
-                    int minEval = int.MaxValue;
-                    foreach (Move move in possibleMoves)
-                    {
-                        Board.MakeMove(move);
-                        int eval = Minimax(depth - 1, true);
-                        UndoMove(move);
-                        minEval = Math.Min(minEval, eval);
-                    }
-                    return minEval;
-                }
-            }
-            private int EvaluateBoard()
-            {
-                int score = 0;
-
-                for (int x = 0; x < 8; x++)
-                {
-                    for (int y = 0; y < 8; y++)
-                    {
-                        ChessPiece piece = Board.Board[x, y];
-                        if (piece != null)
-                        {
-                            int pieceValue = GetPieceValue(piece);
-                            if (piece.IsWhite == IsWhite)
-                            {
-                                score += pieceValue;
-                            }
-                            else
-                            {
-                                score -= pieceValue;
-                            }
-                        }
-                    }
-                }
-
-                return score;
-            }
-            private int GetPieceValue(ChessPiece piece)
-            {
-                // Basic piece value assignment, you can adjust these values as needed
-                switch (piece.Type)
-                {
-                    case PieceType.Pawn: return 1;
-                    case PieceType.Knight: return 3;
-                    case PieceType.Bishop: return 3;
-                    case PieceType.Rook: return 5;
-                    case PieceType.Queen: return 9;
-                    case PieceType.King: return 100; // High value for the king to avoid losing it
-                    default: return 0;
-                }
-            }
+            
         }
 
 
