@@ -16,6 +16,7 @@ namespace Chess
         public PieceType Type { get; set; }
 
         public bool IsWhite { get; private set; }
+        public bool HasMoved { get; set; }
 
         protected ChessPiece(bool isWhite)
         {
@@ -29,7 +30,10 @@ namespace Chess
 
     public class Rook : ChessPiece
     {
-        public Rook(bool isWhite) : base(isWhite) { }
+        public Rook(bool isWhite) : base(isWhite) { 
+            Type = PieceType.Rook;
+        }
+
 
         public override bool IsValidMove(ChessPiece[,] board, int startX, int startY, int endX, int endY)
         {
@@ -121,7 +125,9 @@ namespace Chess
 
     public class King : ChessPiece
     {
-        public King(bool isWhite) : base(isWhite) { }
+        public King(bool isWhite) : base(isWhite) {
+            Type = PieceType.King;
+        }
 
         public override bool IsValidMove(ChessPiece[,] board, int startX, int startY, int endX, int endY)
         {
