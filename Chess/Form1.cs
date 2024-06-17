@@ -326,6 +326,7 @@ namespace Chess
         }
 
 
+
         public class ChessAI
         {
             public bool IsWhite { get; private set; }
@@ -377,22 +378,29 @@ namespace Chess
             {
                 Move bestMove = null;
                 int bestScore = int.MinValue;
+                List<Move> bestMoves = new List<Move>();
 
                 List<Move> possibleMoves = GenerateMoves();
-
                 foreach (Move move in possibleMoves)
                 {
                     Board.MakeMove(move);
-                    int score = Minimax(depth - 1, false); // Assuming AI is maximizing player
+                    int score = AlphaBeta(depth - 1, int.MinValue, int.MaxValue, false);
                     UndoMove(move);
 
                     if (score > bestScore)
                     {
                         bestScore = score;
-                        bestMove = move;
+                        bestMoves.Clear();
+                        bestMoves.Add(move);
+                    }
+                    else if (score == bestScore)
+                    {
+                        bestMoves.Add(move);
                     }
                 }
 
+                Random rand = new Random();
+                bestMove = bestMoves[rand.Next(bestMoves.Count)]; // Select a random move among the best moves
                 return bestMove;
             }
 
@@ -459,10 +467,55 @@ namespace Chess
                     return minEval;
                 }
             }
+
+            private int AlphaBeta(int depth, int alpha, int beta, bool isMaximizingPlayer)
+            {
+                if (depth == 0)
+                {
+                    return EvaluateBoard();
+                }
+
+                List<Move> possibleMoves = GenerateMoves();
+
+                if (isMaximizingPlayer)
+                {
+                    int maxEval = int.MinValue;
+                    foreach (Move move in possibleMoves)
+                    {
+                        Board.MakeMove(move);
+                        int eval = AlphaBeta(depth - 1, alpha, beta, false);
+                        UndoMove(move);
+                        maxEval = Math.Max(maxEval, eval);
+                        alpha = Math.Max(alpha, eval);
+                        if (beta <= alpha)
+                        {
+                            break;
+                        }
+                    }
+                    return maxEval;
+                }
+                else
+                {
+                    int minEval = int.MaxValue;
+                    foreach (Move move in possibleMoves)
+                    {
+                        Board.MakeMove(move);
+                        int eval = AlphaBeta(depth - 1, alpha, beta, true);
+                        UndoMove(move);
+                        minEval = Math.Min(minEval, eval);
+                        beta = Math.Min(beta, eval);
+                        if (beta <= alpha)
+                        {
+                            break;
+                        }
+                    }
+                    return minEval;
+                }
+            }
+
             private int EvaluateBoard()
             {
                 int score = 0;
-
                 for (int x = 0; x < 8; x++)
                 {
                     for (int y = 0; y < 8; y++)
@@ -471,31 +524,43 @@ namespace Chess
                         if (piece != null)
                         {
                             int pieceValue = GetPieceValue(piece);
-                            if (piece.IsWhite == IsWhite)
-                            {
-                                score += pieceValue;
-                            }
-                            else
-                            {
-                                score -= pieceValue;
-                            }
+                            score += piece.IsWhite == IsWhite ? pieceValue : -pieceValue;
+
+                            // Positional adjustments
+                            score += EvaluatePosition(piece, x, y);
                         }
                     }
                 }
-
                 return score;
             }
+
+            private int EvaluatePosition(ChessPiece piece, int x, int y)
+            {
+                int positionScore = 0;
+                // Example: Favor central squares for pieces
+                if (piece is Pawn)
+                {
+                    positionScore += (int)(10 - Math.Abs(x - 3.5) - Math.Abs(y - 3.5));
+                }
+                else if (piece is Knight || piece is Bishop)
+                {
+                    positionScore += (int)(5 - Math.Abs(x - 3.5) - Math.Abs(y - 3.5));
+                }
+                // Add more rules for other pieces...
+
+                return positionScore;
+            }
+
             private int GetPieceValue(ChessPiece piece)
             {
-                // Basic piece value assignment, you can adjust these values as needed
                 switch (piece.Type)
                 {
-                    case PieceType.Pawn: return 1;
-                    case PieceType.Knight: return 3;
-                    case PieceType.Bishop: return 3;
-                    case PieceType.Rook: return 5;
-                    case PieceType.Queen: return 9;
-                    case PieceType.King: return 100; // High value for the king to avoid losing it
+                    case PieceType.Pawn: return 100;
+                    case PieceType.Knight: return 320;
+                    case PieceType.Bishop: return 330;
+                    case PieceType.Rook: return 500;
+                    case PieceType.Queen: return 900;
+                    case PieceType.King: return 20000;
                     default: return 0;
                 }
             }
