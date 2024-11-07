@@ -25,6 +25,7 @@ namespace Chess
             boardStates = new Dictionary<string, int>();
             InitializeBoard();
         }
+       
         public void MakeMove(Move move)
         {
             int startX = move.StartX;
@@ -256,6 +257,7 @@ namespace Chess
             {
                 MessageBox.Show($"{(!IsWhiteTurn ? "White" : "Black")} wins by checkmate!");
                 DisableButtonsEvent?.Invoke();
+                
             }
             else if (IsStalemate(IsWhiteTurn))
             {

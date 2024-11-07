@@ -13,7 +13,7 @@ namespace Chess
     public partial class Form1 : Form
     {
         private const int BoardSize = 8;
-        private Button[,] buttons = new Button[BoardSize, BoardSize];
+        private Button[,] ChessBoardButtons = new Button[BoardSize, BoardSize];
         private ChessBoard chessBoard = new ChessBoard();
         private int selectedX = -1;
         private int selectedY = -1;
@@ -40,7 +40,6 @@ namespace Chess
         {
             InitializeComponent();
             ShowModeSelectionMenu();
-            chessBoard.DisableButtonsEvent += DisableChessBoardButtons;
 
         }
 
@@ -689,7 +688,7 @@ namespace Chess
                     };
 
                     button.Click += new EventHandler(Button_Click);
-                    buttons[x, y] = button;
+                    ChessBoardButtons[x, y] = button;
                     this.Controls.Add(button);
                 }
             }
@@ -697,6 +696,24 @@ namespace Chess
             AddGameplayButtons();
             UpdateBoardUI();
             InitializeCapturedPiecesUI();
+        }
+
+        private void DisableChessBoard()
+        {
+            foreach(Button button in ChessBoardButtons)
+            {
+                button.Enabled = false;
+                button.Click -= new EventHandler(Button_Click);
+            }
+        }
+
+        private void EnableChessBoard()
+        {
+            foreach (Button button in ChessBoardButtons)
+            {
+                button.Enabled = true;
+                button.Click += new EventHandler(Button_Click);
+            }
         }
 
         private void AddGameplayButtons()
@@ -767,6 +784,21 @@ namespace Chess
 
         private void MakeAIMove()
         {
+            bool isInCheck = chessBoard.IsInCheck(false);
+            if (isInCheck)
+            {
+                // Get defensive moves that take the king out of check
+                List<(int startX, int startY, int endX, int endY)> defensiveMoves = GetDefensiveMovesForAI();
+                if (defensiveMoves.Count > 0)
+                {
+                    Random rand = new Random();
+                    var defensiveMove = defensiveMoves[rand.Next(defensiveMoves.Count)];
+                    chessBoard.MovePiece(defensiveMove.startX, defensiveMove.startY, defensiveMove.endX, defensiveMove.endY);
+                    UpdateBoardUI();
+                    return;
+                }
+            }
+            DisableChessBoard();
             if (currentDifficultyLevel == DifficultyLevel.Easy)
             {
                 MakeEasyAIMove();
@@ -779,10 +811,8 @@ namespace Chess
             {
                 MakeHardAIMove();
             }
-            Thread.Sleep(1000);
             chessBoard.IsWhiteTurn = true;
-            EnableChessBoardButtons();
-
+            EnableChessBoard();
 
         }
 
@@ -797,7 +827,7 @@ namespace Chess
 
             // Check if it's AI's turn and the game mode is single player
 
-            // Human player's turn
+            // Human player's turn+
             if (selectedX == -1 && selectedY == -1)
             {
                 if (chessBoard.Board[x, y] != null && chessBoard.Board[x, y].IsWhite == chessBoard.IsWhiteTurn)
@@ -839,14 +869,13 @@ namespace Chess
                     }
                     if (gameMode == GameMode.SinglePlayer)
                     {
-                        Thread.Sleep(1500);
                         MakeAIMove();
                     }
                     
 
                 }
 
-                buttons[selectedX, selectedY].BackColor = (selectedX + selectedY) % 2 == 0 ? Color.White : Color.Gray;
+                ChessBoardButtons[selectedX, selectedY].BackColor = (selectedX + selectedY) % 2 == 0 ? Color.White : Color.Gray;
                 selectedX = -1;
                 selectedY = -1;
                 UpdateBoardUI();
@@ -854,29 +883,6 @@ namespace Chess
 
             }
 
-        }
-
-        private void DisableChessBoardButtons()
-        {
-            foreach (Control c in Controls)
-            {
-                if (c is Button button && button.Text != "Restart" && button.Text != "Quit")
-                {
-                    button.Enabled = false;
-                    button.Click -= new EventHandler(Button_Click);
-                }
-            }
-        }
-
-        private void EnableChessBoardButtons()
-        {
-            foreach (Control c in Controls)
-            {
-                if (c is Button button && button.Text != "Restart" && button.Text != "Quit")
-                {
-                    button.Enabled = true;
-                }
-            }
         }
 
 
@@ -888,8 +894,8 @@ namespace Chess
                 for (int y = 0; y < BoardSize; y++)
                 {
                     ChessPiece piece = chessBoard.Board[x, y];
-                    buttons[x, y].Text = piece != null ? GetPieceSymbol(piece) : "";
-                    buttons[x, y].BackColor = (x + y) % 2 == 0 ? Color.White : Color.Gray;
+                    ChessBoardButtons[x, y].Text = piece != null ? GetPieceSymbol(piece) : "";
+                    ChessBoardButtons[x, y].BackColor = (x + y) % 2 == 0 ? Color.White : Color.Gray;
                 }
             }
             UpdateCapturedPiecesUI();
