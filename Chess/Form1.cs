@@ -5,6 +5,7 @@ using System.Windows.Forms;
 using System.Diagnostics;
 using System.Threading;
 using System.Linq;
+using static System.Windows.Forms.AxHost;
 //new update
 
 namespace Chess
@@ -18,6 +19,7 @@ namespace Chess
         private int selectedX = -1;
         private int selectedY = -1;
         bool canMoveAI = false;
+
 
         public enum GameMode
         {
@@ -203,6 +205,23 @@ namespace Chess
 
             return availableMoves;
         }
+        private static List<(int startX, int startY, int endX, int endY)> GetPossibleMovesForPiece(ChessPiece[,] board, int startX, int startY)
+        {
+            List<(int startX, int startY, int endX, int endY)> moves = new List<(int, int, int, int)>();
+            for (int endX = 0; endX < 8; endX++)
+            {
+                for (int endY = 0; endY < 8; endY++)
+                {
+                    ChessPiece piece = board[startX, startY];
+                    if (piece != null && piece.IsValidMove(board, startX, startY, endX, endY))
+                    {
+                        moves.Add((startX, startY, endX, endY));
+                    }
+                }
+            }
+            return moves;
+        }
+
 
 
         private void MakeEasyAIMove()
@@ -314,15 +333,204 @@ namespace Chess
         }
         private void MakeHardAIMove()
         {
-            bool isAIStartingTurn = false;  // Set to true if AI starts, false otherwise
-            ChessAI ai = new ChessAI(false, chessBoard, isAIStartingTurn);  // Assuming AI plays black
-            Move bestMove = ai.FindBestMove(4);  // Depth 3 for example
+            ChessAI ai = new ChessAI(false, chessBoard, false); // Assuming AI plays black
+            Move bestMove = ai.FindBestMove(4); // Depth 4 for example
 
             if (bestMove != null)
             {
                 chessBoard.MakeMove(bestMove);
             }
             UpdateBoardUI();
+        }
+        private static int EvaluateControlOfMiddle(ChessPiece piece, int x, int y, ChessBoard chessBoard)
+        {
+            int[,] middleSquares = { { 3, 3 }, { 3, 4 }, { 4, 3 }, { 4, 4 } };
+            for (int i = 0; i < middleSquares.GetLength(0); i++)
+            {
+                int middleX = middleSquares[i, 0];
+                int middleY = middleSquares[i, 1];
+
+                if (piece.IsValidMove(chessBoard.Board, x, y, middleX, middleY))
+                {
+                    return 20; 
+                }
+            }
+            return 0;
+        }
+
+        private static int EvaluatePressureOnKing(ChessPiece[,] board, Position kingPosition, ChessPiece piece, int startX, int startY, int endX, int endY)
+        {
+            int score = 0;
+
+            // Simulate the move
+            ChessPiece[,] simulatedBoard = CloneBoard(board); // Ensure CloneBoard is also static
+            simulatedBoard[endX, endY] = simulatedBoard[startX, startY];
+            simulatedBoard[startX, startY] = null;
+
+            // Check restricted squares around the king
+            int restrictedSquares = 0;
+            for (int i = -1; i <= 1; i++)
+            {
+                for (int j = -1; j <= 1; j++)
+                {
+                    int kingX = kingPosition.Row + i;
+                    int kingY = kingPosition.Col + j;
+
+                    if (kingX >= 0 && kingX < 8 && kingY >= 0 && kingY < 8)
+                    {
+                        if (simulatedBoard[kingX, kingY] == null || simulatedBoard[kingX, kingY].IsWhite != piece.IsWhite)
+                        {
+                            restrictedSquares++;
+                        }
+                    }
+                }
+            }
+
+            
+
+            score += restrictedSquares * 15;
+
+            if (IsPieceCapturedForLessMaterial(simulatedBoard, endX, endY)) 
+            {
+                score -= 30; 
+            }
+
+            return score;
+        }
+
+
+        private static bool IsPieceCapturedForLessMaterial(ChessPiece[,] board, int x, int y)
+        {
+            ChessPiece targetPiece = board[x, y];
+            if (targetPiece == null) return false;
+
+
+            for (int i = -1; i <= 1; i++)
+            {
+                for (int j = -1; j <= 1; j++)
+                {
+                    int attackX = x + i;
+                    int attackY = y + j;
+
+                    if (attackX >= 0 && attackX < 8 && attackY >= 0 && attackY < 8)
+                    {
+                        ChessPiece attackingPiece = board[attackX, attackY];
+                        if (attackingPiece != null && attackingPiece.IsWhite != targetPiece.IsWhite && GetPieceValue(attackingPiece) < GetPieceValue(targetPiece))
+                        {
+                            return true;
+                        }
+                    }
+                }
+            }
+
+            return false;
+        }
+
+        private int EvaluateKingPositionSafety(ChessPiece[,] board, Position kingPosition, PieceColor color)
+        {
+            int score = 0;
+
+            // Penalize open files around the king
+            for (int i = -1; i <= 1; i++)
+            {
+                int file = kingPosition.Col + i;
+                if (file >= 0 && file < BoardSize && !IsPawnOnFile(board, kingPosition.Row, file, color == PieceColor.White))
+                {
+                    score -= 10;
+                }
+            }
+
+            // Penalize exposed positions (fewer defenders)
+            int defenders = CountDefenders(board, kingPosition, color);
+            score -= (3 - defenders) * 10; // Less than 3 defenders is penalized
+
+            return score;
+        }
+        private int CountDefenders(ChessPiece[,] board, Position pos, PieceColor color)
+        {
+            int defenders = 0;
+
+            for (int x = 0; x < BoardSize; x++)
+            {
+                for (int y = 0; y < BoardSize; y++)
+                {
+                    ChessPiece piece = board[x, y];
+                    if (piece != null && piece.IsWhite == (color == PieceColor.White)) // Friendly piece
+                    {
+                        if (piece.IsValidMove(board, x, y, pos.Row, pos.Col))
+                        {
+                            defenders++;
+                        }
+                    }
+                }
+            }
+
+            return defenders;
+        }
+        public enum PieceColor
+        {
+            White,
+            Black
+        }
+
+
+        private int EvaluatePawnStructure(bool isWhite)
+        {
+            int score = 0;
+
+            for (int x = 0; x < BoardSize; x++)
+            {
+                for (int y = 0; y < BoardSize; y++)
+                {
+                    if (chessBoard.Board[x, y] is Pawn pawn && pawn.IsWhite == isWhite)
+                    {
+                        // Penalize doubled pawns
+                        for (int i = 0; i < BoardSize; i++)
+                        {
+                            if (i != x && chessBoard.Board[i, y] is Pawn otherPawn && otherPawn.IsWhite == isWhite)
+                            {
+                                score -= 10;
+                            }
+                        }
+
+                        // Penalize isolated pawns
+                        if ((y == 0 || !IsPawnOnFile(chessBoard.Board, x, y - 1, isWhite)) &&
+                            (y == 7 || !IsPawnOnFile(chessBoard.Board, x, y + 1, isWhite)))
+                        {
+                            score -= 15;
+                        }
+
+                        // Reward passed pawns
+                        if (IsPassedPawn(chessBoard.Board, x, y, isWhite))
+                        {
+                            score += 20;
+                        }
+                    }
+                }
+            }
+
+            return score;
+        }
+        private bool IsPawnOnFile(ChessPiece[,] board, int x, int y, bool isWhite)
+        {
+            if (x < 0 || x >= BoardSize || y < 0 || y >= BoardSize) return false;
+            return board[x, y] is Pawn pawn && pawn.IsWhite == isWhite;
+        }
+        private bool IsPassedPawn(ChessPiece[,] board, int x, int y, bool isWhite)
+        {
+            int direction = isWhite ? -1 : 1;
+
+            for (int newY = y + direction; newY >= 0 && newY < BoardSize; newY += direction)
+            {
+                for (int i = 0; i < BoardSize; i++)
+                {
+                    if (i != x && board[i, newY] is Pawn pawn && pawn.IsWhite != isWhite)
+                    {
+                        return false; // Opponent pawn blocks the advance
+                    }
+                }
+            }
+            return true;
         }
 
 
@@ -437,7 +645,7 @@ namespace Chess
             {
                 if (depth == 0)
                 {
-                    return EvaluateBoard();
+                    return EvaluateBoard(this.Board); // Pass the ChessBoard instance
                 }
 
                 List<Move> possibleMoves = GenerateMoves();
@@ -447,10 +655,10 @@ namespace Chess
                     int maxEval = int.MinValue;
                     foreach (Move move in possibleMoves)
                     {
-                        Board.MakeMove(move);
-                        int eval = Minimax(depth - 1, false);
-                        UndoMove(move);
-                        maxEval = Math.Max(maxEval, eval);
+                        this.Board.MakeMove(move); // Apply the move
+                        int eval = Minimax(depth - 1, false); // Recurse
+                        UndoMove(move); // Undo the move
+                        maxEval = Math.Max(maxEval, eval); // Maximize
                     }
                     return maxEval;
                 }
@@ -459,20 +667,21 @@ namespace Chess
                     int minEval = int.MaxValue;
                     foreach (Move move in possibleMoves)
                     {
-                        Board.MakeMove(move);
+                        this.Board.MakeMove(move);
                         int eval = Minimax(depth - 1, true);
                         UndoMove(move);
-                        minEval = Math.Min(minEval, eval);
+                        minEval = Math.Min(minEval, eval); // Minimize
                     }
                     return minEval;
                 }
             }
+
 
             private int AlphaBeta(int depth, int alpha, int beta, bool isMaximizingPlayer)
             {
                 if (depth == 0)
                 {
-                    return EvaluateBoard();
+                    return EvaluateBoard(this.Board); // Pass the ChessBoard instance
                 }
 
                 List<Move> possibleMoves = GenerateMoves();
@@ -482,15 +691,13 @@ namespace Chess
                     int maxEval = int.MinValue;
                     foreach (Move move in possibleMoves)
                     {
-                        Board.MakeMove(move);
+                        this.Board.MakeMove(move);
                         int eval = AlphaBeta(depth - 1, alpha, beta, false);
                         UndoMove(move);
                         maxEval = Math.Max(maxEval, eval);
                         alpha = Math.Max(alpha, eval);
                         if (beta <= alpha)
-                        {
-                            break;
-                        }
+                            break; // Beta cut-off
                     }
                     return maxEval;
                 }
@@ -499,40 +706,80 @@ namespace Chess
                     int minEval = int.MaxValue;
                     foreach (Move move in possibleMoves)
                     {
-                        Board.MakeMove(move);
+                        this.Board.MakeMove(move);
                         int eval = AlphaBeta(depth - 1, alpha, beta, true);
                         UndoMove(move);
                         minEval = Math.Min(minEval, eval);
                         beta = Math.Min(beta, eval);
                         if (beta <= alpha)
-                        {
-                            break;
-                        }
+                            break; // Alpha cut-off
                     }
                     return minEval;
                 }
             }
 
-            private int EvaluateBoard()
+
+            private int EvaluateBoard(ChessBoard chessBoard)
             {
                 int score = 0;
+
                 for (int x = 0; x < 8; x++)
                 {
                     for (int y = 0; y < 8; y++)
                     {
-                        ChessPiece piece = Board.Board[x, y];
+                        ChessPiece piece = chessBoard.Board[x, y];
                         if (piece != null)
                         {
                             int pieceValue = GetPieceValue(piece);
-                            score += piece.IsWhite == IsWhite ? pieceValue : -pieceValue;
+                            score += piece.IsWhite == chessBoard.IsWhiteTurn ? pieceValue : -pieceValue;
 
                             // Positional adjustments
-                            score += EvaluatePosition(piece, x, y);
+                            score += EvaluateControlOfMiddle(piece, x, y, chessBoard);
+
+                            // Evaluate pressure based on possible moves
+                            if (piece.IsWhite != chessBoard.IsWhiteTurn)
+                            {
+                                Position opponentKingPosition = FindOpponentKing(chessBoard, piece.IsWhite);
+                                var possibleMoves = GetPossibleMovesForPiece(chessBoard.Board, x, y);
+
+                                foreach (var move in possibleMoves)
+                                {
+                                    score += EvaluatePressureOnKing(
+                                        chessBoard.Board,
+                                        opponentKingPosition,
+                                        piece,
+                                        move.startX,
+                                        move.startY,
+                                        move.endX,
+                                        move.endY
+                                    );
+                                }
+                            }
                         }
                     }
                 }
+
                 return score;
             }
+
+
+            private Position FindOpponentKing(ChessBoard chessBoard, bool isWhite)
+            {
+                for (int x = 0; x < 8; x++)
+                {
+                    for (int y = 0; y < 8; y++)
+                    {
+                        ChessPiece piece = chessBoard.Board[x, y];
+                        if (piece is King && piece.IsWhite != isWhite)
+                        {
+                            return new Position(x, y);
+                        }
+                    }
+                }
+                return null;
+            }
+
+
 
             private int EvaluatePosition(ChessPiece piece, int x, int y)
             {
@@ -611,7 +858,7 @@ namespace Chess
             return defensiveMoves;
         }
 
-        private ChessPiece[,] CloneBoard(ChessPiece[,] originalBoard)
+        private static ChessPiece[,] CloneBoard(ChessPiece[,] originalBoard)
         {
             ChessPiece[,] clonedBoard = new ChessPiece[BoardSize, BoardSize];
             for (int x = 0; x < BoardSize; x++)
@@ -670,6 +917,20 @@ namespace Chess
            
             this.Controls.Clear();
             ShowModeSelectionMenu();
+        }
+        private static int GetPieceValue(ChessPiece piece)
+        {
+            // Assign values to each piece type
+            switch (piece.Type)
+            {
+                case PieceType.Pawn: return 1;
+                case PieceType.Knight: return 3;
+                case PieceType.Bishop: return 3;
+                case PieceType.Rook: return 5;
+                case PieceType.Queen: return 9;
+                case PieceType.King: return 1000; 
+                default: return 0;
+            }
         }
 
         private void InitializeBoard()
@@ -938,6 +1199,7 @@ namespace Chess
        
     }
 
+
     public class Move
     {
         public int StartX { get; set; }
@@ -956,4 +1218,16 @@ namespace Chess
             Piece = piece;
         }
     }
+    public class Position
+    {
+        public int Row { get; set; }
+        public int Col { get; set; }
+
+        public Position(int row, int col)
+        {
+            Row = row;
+            Col = col;
+        }
+    }
+
 }
