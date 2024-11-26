@@ -437,32 +437,185 @@ namespace Chess
             private List<Move> GenerateMoves()
             {
                 List<Move> possibleMoves = new List<Move>();
-
-                // Iterate over the board to generate all possible moves
-                for (int startX = 0; startX < 8; startX++)
+                for (int x = 0; x < 8; x++)
                 {
-                    for (int startY = 0; startY < 8; startY++)
+                    for (int y = 0; y < 8; y++)
                     {
-                        ChessPiece piece = Board.Board[startX, startY];
+                        ChessPiece piece = Board.Board[x, y];
                         if (piece != null && piece.IsWhite == IsWhite)
                         {
-                            // Generate moves for each piece
-                            for (int endX = 0; endX < 8; endX++)
-                            {
-                                for (int endY = 0; endY < 8; endY++)
-                                {
-                                    if (piece.IsValidMove(Board.Board, startX, startY, endX, endY))
-                                    {
-                                        possibleMoves.Add(new Move(startX, startY, endX, endY, piece));
-                                    }
-                                }
-                            }
+                            possibleMoves.AddRange(GenerateMovesForPiece(piece, x, y));
                         }
                     }
                 }
-
                 return possibleMoves;
             }
+            private List<Move> GenerateMovesForPiece(ChessPiece piece, int startX, int startY)
+            {
+                switch (piece.Type)
+                {
+                    case PieceType.Pawn:
+                        return GeneratePawnMoves(piece, startX, startY);
+                    case PieceType.Rook:
+                        return GenerateSlidingPieceMoves(piece, startX, startY, new (int, int)[] { (1, 0), (0, 1), (-1, 0), (0, -1) });
+                    case PieceType.Bishop:
+                        return GenerateSlidingPieceMoves(piece, startX, startY, new (int, int)[] { (1, 1), (-1, -1), (1, -1), (-1, 1) });
+                    case PieceType.Knight:
+                        return GenerateKnightMoves(piece, startX, startY);
+                    case PieceType.King:
+                        return GenerateKingMoves(piece, startX, startY);
+                    case PieceType.Queen:
+                        return GenerateSlidingPieceMoves(piece, startX, startY, new (int, int)[] {
+                (1, 0), (0, 1), (-1, 0), (0, -1),
+                (1, 1), (-1, -1), (1, -1), (-1, 1) });
+                    default:
+                        return new List<Move>();
+                }
+            }
+            private List<Move> GenerateSlidingPieceMoves(ChessPiece piece, int startX, int startY, (int dx, int dy)[] directions)
+            {
+                List<Move> moves = new List<Move>();
+                foreach ((int dx, int dy) in directions)
+                {
+                    int x = startX + dx;
+                    int y = startY + dy;
+
+                    while (IsValidSquare(x, y) && (Board.Board[x, y] == null || Board.Board[x, y].IsWhite != piece.IsWhite))
+                    {
+                        moves.Add(new Move(startX, startY, x, y, piece));
+                        if (Board.Board[x, y] != null) // Stop if there's a capture
+                            break;
+
+                        x += dx;
+                        y += dy;
+                    }
+                }
+                return moves;
+            }
+            private List<Move> GenerateKnightMoves(ChessPiece piece, int startX, int startY)
+            {
+                List<Move> moves = new List<Move>();
+                int[,] knightMoves = { { 2, 1 }, { 1, 2 }, { -1, 2 }, { -2, 1 }, { -2, -1 }, { -1, -2 }, { 1, -2 }, { 2, -1 } };
+
+                foreach (var move in knightMoves)
+                {
+                    int x = startX + move[0];
+                    int y = startY + move[1];
+                    if (IsValidSquare(x, y) && (Board.Board[x, y] == null || Board.Board[x, y].IsWhite != piece.IsWhite))
+                    {
+                        moves.Add(new Move(startX, startY, x, y, piece));
+                    }
+                }
+                return moves;
+            }
+            private List<Move> GenerateKingMoves(ChessPiece piece, int startX, int startY)
+            {
+                List<Move> moves = new List<Move>();
+                int[,] kingMoves = {
+        { 1, 0 }, { 0, 1 }, { -1, 0 }, { 0, -1 }, // Horizontal/Vertical moves
+        { 1, 1 }, { -1, -1 }, { 1, -1 }, { -1, 1 } // Diagonal moves
+    };
+
+                // Regular king moves
+                foreach (var move in kingMoves)
+                {
+                    int x = startX + move[0];
+                    int y = startY + move[1];
+                    if (IsValidSquare(x, y) && (Board.Board[x, y] == null || Board.Board[x, y].IsWhite != piece.IsWhite))
+                    {
+                        moves.Add(new Move(startX, startY, x, y, piece));
+                    }
+                }
+
+                // Castling moves
+                if (!piece.HasMoved)
+                {
+                    // Check kingside castling
+                    if (CanCastle(startX, startY, startX, startY + 2))
+                    {
+                        moves.Add(new Move(startX, startY, startX, startY + 2, piece));
+                    }
+
+                    // Check queenside castling
+                    if (CanCastle(startX, startY, startX, startY - 2))
+                    {
+                        moves.Add(new Move(startX, startY, startX, startY - 2, piece));
+                    }
+                }
+
+                return moves;
+            }
+            private bool CanCastle(int kingX, int kingY, int targetX, int targetY)
+            {
+                // Determine if this is kingside or queenside castling
+                bool isKingside = targetY > kingY;
+
+                // Identify the rook's position
+                int rookY = isKingside ? 7 : 0;
+                ChessPiece rook = Board.Board[kingX, rookY];
+
+                // Check if rook exists and has not moved
+                if (rook == null || rook.Type != PieceType.Rook || rook.HasMoved)
+                    return false;
+
+                // Check if squares between king and rook are empty
+                int direction = isKingside ? 1 : -1;
+                for (int y = kingY + direction; y != rookY; y += direction)
+                {
+                    if (Board.Board[kingX, y] != null)
+                        return false;
+                }
+
+                // Ensure the king is not in check and does not pass through or end in a checked square
+                if (IsKingInCheck(Board.Board, piece.IsWhite))
+                    return false;
+
+                for (int y = kingY; y != targetY + direction; y += direction)
+                {
+                    ChessPiece[,] simulatedBoard = CloneBoard(Board.Board);
+                    simulatedBoard[kingX, kingY] = null;
+                    simulatedBoard[kingX, y] = Board.Board[kingX, kingY];
+                    if (IsKingInCheck(simulatedBoard, piece.IsWhite))
+                        return false;
+                }
+
+                return true;
+            }
+
+            private List<Move> GeneratePawnMoves(ChessPiece piece, int startX, int startY)
+            {
+                List<Move> moves = new List<Move>();
+                int direction = piece.IsWhite ? -1 : 1;
+                int startingRow = piece.IsWhite ? 6 : 1;
+
+                // Forward move
+                if (IsValidSquare(startX + direction, startY) && Board.Board[startX + direction, startY] == null)
+                {
+                    moves.Add(new Move(startX, startY, startX + direction, startY, piece));
+                    // Double move from starting position
+                    if (startX == startingRow && Board.Board[startX + 2 * direction, startY] == null)
+                    {
+                        moves.Add(new Move(startX, startY, startX + 2 * direction, startY, piece));
+                    }
+                }
+
+                // Capture moves
+                foreach (int dy in new[] { -1, 1 })
+                {
+                    if (IsValidSquare(startX + direction, startY + dy) && Board.Board[startX + direction, startY + dy]?.IsWhite != piece.IsWhite)
+                    {
+                        moves.Add(new Move(startX, startY, startX + direction, startY + dy, piece));
+                    }
+                }
+
+                return moves;
+            }
+
+
+
+
+
+
             private int Minimax(int depth, bool isMaximizingPlayer)
             {
                 if (depth == 0)
