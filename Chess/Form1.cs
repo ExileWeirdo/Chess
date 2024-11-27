@@ -345,7 +345,7 @@ namespace Chess
         private void MakeHardAIMove()
         {
             ChessAI ai = new ChessAI(false, chessBoard, false); // Assuming AI plays black
-            Move bestMove = ai.FindBestMove(4); // Depth 4 for example
+            Move bestMove = ai.FindBestMove(4); 
 
             if (bestMove != null)
             {
@@ -410,7 +410,9 @@ namespace Chess
                 int bestScore = int.MinValue;
                 List<Move> bestMoves = new List<Move>();
 
-                List<Move> possibleMoves = GenerateMoves();
+                // Pass the board and AI's color to GenerateMoves
+                List<Move> possibleMoves = GenerateMoves(Board.Board, IsWhite);
+
                 foreach (Move move in possibleMoves)
                 {
                     Board.MakeMove(move);
@@ -434,182 +436,37 @@ namespace Chess
                 return bestMove;
             }
 
-            private List<Move> GenerateMoves()
+
+            private List<Move> GenerateMoves(ChessPiece[,] board, bool isWhite)
             {
                 List<Move> possibleMoves = new List<Move>();
-                for (int x = 0; x < 8; x++)
+
+                for (int startX = 0; startX < 8; startX++)
                 {
-                    for (int y = 0; y < 8; y++)
+                    for (int startY = 0; startY < 8; startY++)
                     {
-                        ChessPiece piece = Board.Board[x, y];
-                        if (piece != null && piece.IsWhite == IsWhite)
+                        ChessPiece piece = board[startX, startY];
+                        if (piece != null && piece.IsWhite == isWhite)
                         {
-                            possibleMoves.AddRange(GenerateMovesForPiece(piece, x, y));
+                            for (int endX = 0; endX < 8; endX++)
+                            {
+                                for (int endY = 0; endY < 8; endY++)
+                                {
+                                    if (piece.IsValidMove(board, startX, startY, endX, endY))
+                                    {
+                                        possibleMoves.Add(new Move(startX, startY, endX, endY, piece));
+                                    }
+                                }
+                            }
                         }
                     }
                 }
                 return possibleMoves;
             }
-            private List<Move> GenerateMovesForPiece(ChessPiece piece, int startX, int startY)
-            {
-                switch (piece.Type)
-                {
-                    case PieceType.Pawn:
-                        return GeneratePawnMoves(piece, startX, startY);
-                    case PieceType.Rook:
-                        return GenerateSlidingPieceMoves(piece, startX, startY, new (int, int)[] { (1, 0), (0, 1), (-1, 0), (0, -1) });
-                    case PieceType.Bishop:
-                        return GenerateSlidingPieceMoves(piece, startX, startY, new (int, int)[] { (1, 1), (-1, -1), (1, -1), (-1, 1) });
-                    case PieceType.Knight:
-                        return GenerateKnightMoves(piece, startX, startY);
-                    case PieceType.King:
-                        return GenerateKingMoves(piece, startX, startY);
-                    case PieceType.Queen:
-                        return GenerateSlidingPieceMoves(piece, startX, startY, new (int, int)[] {
-                (1, 0), (0, 1), (-1, 0), (0, -1),
-                (1, 1), (-1, -1), (1, -1), (-1, 1) });
-                    default:
-                        return new List<Move>();
-                }
-            }
-            private List<Move> GenerateSlidingPieceMoves(ChessPiece piece, int startX, int startY, (int dx, int dy)[] directions)
-            {
-                List<Move> moves = new List<Move>();
-                foreach ((int dx, int dy) in directions)
-                {
-                    int x = startX + dx;
-                    int y = startY + dy;
 
-                    while (IsValidSquare(x, y) && (Board.Board[x, y] == null || Board.Board[x, y].IsWhite != piece.IsWhite))
-                    {
-                        moves.Add(new Move(startX, startY, x, y, piece));
-                        if (Board.Board[x, y] != null) // Stop if there's a capture
-                            break;
 
-                        x += dx;
-                        y += dy;
-                    }
-                }
-                return moves;
-            }
-            private List<Move> GenerateKnightMoves(ChessPiece piece, int startX, int startY)
-            {
-                List<Move> moves = new List<Move>();
-                int[,] knightMoves = { { 2, 1 }, { 1, 2 }, { -1, 2 }, { -2, 1 }, { -2, -1 }, { -1, -2 }, { 1, -2 }, { 2, -1 } };
 
-                foreach (var move in knightMoves)
-                {
-                    int x = startX + move[0];
-                    int y = startY + move[1];
-                    if (IsValidSquare(x, y) && (Board.Board[x, y] == null || Board.Board[x, y].IsWhite != piece.IsWhite))
-                    {
-                        moves.Add(new Move(startX, startY, x, y, piece));
-                    }
-                }
-                return moves;
-            }
-            private List<Move> GenerateKingMoves(ChessPiece piece, int startX, int startY)
-            {
-                List<Move> moves = new List<Move>();
-                int[,] kingMoves = {
-        { 1, 0 }, { 0, 1 }, { -1, 0 }, { 0, -1 }, // Horizontal/Vertical moves
-        { 1, 1 }, { -1, -1 }, { 1, -1 }, { -1, 1 } // Diagonal moves
-    };
 
-                // Regular king moves
-                foreach (var move in kingMoves)
-                {
-                    int x = startX + move[0];
-                    int y = startY + move[1];
-                    if (IsValidSquare(x, y) && (Board.Board[x, y] == null || Board.Board[x, y].IsWhite != piece.IsWhite))
-                    {
-                        moves.Add(new Move(startX, startY, x, y, piece));
-                    }
-                }
-
-                // Castling moves
-                if (!piece.HasMoved)
-                {
-                    // Check kingside castling
-                    if (CanCastle(startX, startY, startX, startY + 2))
-                    {
-                        moves.Add(new Move(startX, startY, startX, startY + 2, piece));
-                    }
-
-                    // Check queenside castling
-                    if (CanCastle(startX, startY, startX, startY - 2))
-                    {
-                        moves.Add(new Move(startX, startY, startX, startY - 2, piece));
-                    }
-                }
-
-                return moves;
-            }
-            private bool CanCastle(int kingX, int kingY, int targetX, int targetY)
-            {
-                // Determine if this is kingside or queenside castling
-                bool isKingside = targetY > kingY;
-
-                // Identify the rook's position
-                int rookY = isKingside ? 7 : 0;
-                ChessPiece rook = Board.Board[kingX, rookY];
-
-                // Check if rook exists and has not moved
-                if (rook == null || rook.Type != PieceType.Rook || rook.HasMoved)
-                    return false;
-
-                // Check if squares between king and rook are empty
-                int direction = isKingside ? 1 : -1;
-                for (int y = kingY + direction; y != rookY; y += direction)
-                {
-                    if (Board.Board[kingX, y] != null)
-                        return false;
-                }
-
-                // Ensure the king is not in check and does not pass through or end in a checked square
-                if (IsKingInCheck(Board.Board, piece.IsWhite))
-                    return false;
-
-                for (int y = kingY; y != targetY + direction; y += direction)
-                {
-                    ChessPiece[,] simulatedBoard = CloneBoard(Board.Board);
-                    simulatedBoard[kingX, kingY] = null;
-                    simulatedBoard[kingX, y] = Board.Board[kingX, kingY];
-                    if (IsKingInCheck(simulatedBoard, piece.IsWhite))
-                        return false;
-                }
-
-                return true;
-            }
-
-            private List<Move> GeneratePawnMoves(ChessPiece piece, int startX, int startY)
-            {
-                List<Move> moves = new List<Move>();
-                int direction = piece.IsWhite ? -1 : 1;
-                int startingRow = piece.IsWhite ? 6 : 1;
-
-                // Forward move
-                if (IsValidSquare(startX + direction, startY) && Board.Board[startX + direction, startY] == null)
-                {
-                    moves.Add(new Move(startX, startY, startX + direction, startY, piece));
-                    // Double move from starting position
-                    if (startX == startingRow && Board.Board[startX + 2 * direction, startY] == null)
-                    {
-                        moves.Add(new Move(startX, startY, startX + 2 * direction, startY, piece));
-                    }
-                }
-
-                // Capture moves
-                foreach (int dy in new[] { -1, 1 })
-                {
-                    if (IsValidSquare(startX + direction, startY + dy) && Board.Board[startX + direction, startY + dy]?.IsWhite != piece.IsWhite)
-                    {
-                        moves.Add(new Move(startX, startY, startX + direction, startY + dy, piece));
-                    }
-                }
-
-                return moves;
-            }
 
 
 
@@ -620,20 +477,21 @@ namespace Chess
             {
                 if (depth == 0)
                 {
-                    return EvaluateBoard(this.Board); // Pass the ChessBoard instance
+                    return EvaluateBoard(Board); // Pass the ChessBoard instance
                 }
 
-                List<Move> possibleMoves = GenerateMoves();
+                // Pass board and turn information
+                List<Move> possibleMoves = GenerateMoves(Board.Board, isMaximizingPlayer);
 
                 if (isMaximizingPlayer)
                 {
                     int maxEval = int.MinValue;
                     foreach (Move move in possibleMoves)
                     {
-                        this.Board.MakeMove(move); // Apply the move
-                        int eval = Minimax(depth - 1, false); // Recurse
-                        UndoMove(move); // Undo the move
-                        maxEval = Math.Max(maxEval, eval); // Maximize
+                        Board.MakeMove(move);
+                        int eval = Minimax(depth - 1, false);
+                        UndoMove(move);
+                        maxEval = Math.Max(maxEval, eval);
                     }
                     return maxEval;
                 }
@@ -642,79 +500,224 @@ namespace Chess
                     int minEval = int.MaxValue;
                     foreach (Move move in possibleMoves)
                     {
-                        this.Board.MakeMove(move);
+                        Board.MakeMove(move);
                         int eval = Minimax(depth - 1, true);
                         UndoMove(move);
-                        minEval = Math.Min(minEval, eval); // Minimize
+                        minEval = Math.Min(minEval, eval);
                     }
                     return minEval;
                 }
             }
+
 
 
             private int AlphaBeta(int depth, int alpha, int beta, bool isMaximizingPlayer)
             {
+                ulong hash = ComputeZobristHash(Board.Board);
+
+                // Check transposition table
+                if (TryGetTransposition(hash, depth, out int cachedScore))
+                {
+                    return cachedScore;
+                }
+
                 if (depth == 0)
                 {
-                    return EvaluateBoard(Board);
+                    return QuiescenceSearch(alpha, beta);
                 }
 
-                List<Move> possibleMoves = GenerateMoves();
-                possibleMoves = SortMoves(possibleMoves);
+                List<Move> possibleMoves = GenerateMoves(Board.Board, isMaximizingPlayer);
+                possibleMoves = OrderMoves(possibleMoves, Board);
 
-                if (isMaximizingPlayer)
+                int bestScore = isMaximizingPlayer ? int.MinValue : int.MaxValue;
+
+                foreach (Move move in possibleMoves)
                 {
-                    int maxEval = int.MinValue;
-                    foreach (Move move in possibleMoves)
+                    Board.MakeMove(move);
+                    int eval = AlphaBeta(depth - 1, alpha, beta, !isMaximizingPlayer);
+                    UndoMove(move);
+
+                    if (isMaximizingPlayer)
                     {
-                        Board.MakeMove(move);
-                        int eval = AlphaBeta(depth - 1, alpha, beta, false);
-                        UndoMove(move);
-                        maxEval = Math.Max(maxEval, eval);
+                        bestScore = Math.Max(bestScore, eval);
                         alpha = Math.Max(alpha, eval);
-                        if (beta <= alpha)
-                            break; // Beta cut-off
                     }
-                    return maxEval;
-                }
-                else
-                {
-                    int minEval = int.MaxValue;
-                    foreach (Move move in possibleMoves)
+                    else
                     {
-                        Board.MakeMove(move);
-                        int eval = AlphaBeta(depth - 1, alpha, beta, true);
-                        UndoMove(move);
-                        minEval = Math.Min(minEval, eval);
+                        bestScore = Math.Min(bestScore, eval);
                         beta = Math.Min(beta, eval);
-                        if (beta <= alpha)
-                            break; // Alpha cut-off
                     }
-                    return minEval;
+
+                    if (beta <= alpha)
+                        break; // Alpha-beta cutoff
                 }
+
+                // Store result in transposition table
+                StoreInTranspositionTable(hash, depth, bestScore);
+                return bestScore;
             }
-            private List<Move> SortMoves(List<Move> moves)
+
+
+
+            private List<Move> OrderMoves(List<Move> moves, ChessBoard board)
             {
                 return moves.OrderByDescending(move =>
                 {
-                    int score = 0;
-
-                    // Example: Prioritize captures
-                    if (move.CapturedPiece != null)
-                    {
-                        score += GetPieceValue(move.CapturedPiece) - GetPieceValue(move.Piece);
-                    }
-
-                    // Example: Reward moves towards the center
-                    int[] centerSquares = { 3, 4 };
-                    if (centerSquares.Contains(move.EndX) && centerSquares.Contains(move.EndY))
-                    {
-                        score += 10;
-                    }
-
-                    return score;
+                    // Higher values for captures, promotions, or checks
+                    ChessPiece target = board.Board[move.EndX, move.EndY];
+                    int value = target != null ? GetPieceValue(target) : 0; // Capture value
+                    if (move.Piece is Pawn && (move.EndY == 0 || move.EndY == 7))
+                        value += 900; // Promotion value
+                    if (IsCheck(move, board))
+                        value += 500; // Check value
+                    return value;
                 }).ToList();
             }
+            private int QuiescenceSearch(int alpha, int beta)
+            {
+                int standPat = EvaluateBoard(Board); // Static evaluation
+
+                if (standPat >= beta)
+                    return beta; // Beta cutoff
+                if (alpha < standPat)
+                    alpha = standPat; // Update alpha if current evaluation is better
+
+                // Generate and process capture moves
+                List<Move> captureMoves = GenerateCaptureMoves(Board.Board, IsWhite);
+                foreach (var move in captureMoves)
+                {
+                    Board.MakeMove(move);
+                    int eval = -QuiescenceSearch(-beta, -alpha); // Recurse with negated scores
+                    UndoMove(move);
+
+                    if (eval >= beta)
+                        return beta; // Beta cutoff
+                    if (eval > alpha)
+                        alpha = eval; // Update alpha
+                }
+
+                return alpha;
+            }
+
+            private List<Move> GenerateCaptureMoves(ChessPiece[,] board, bool isWhite)
+            {
+                List<Move> captureMoves = new List<Move>();
+
+                foreach (var move in GenerateMoves(board, isWhite))
+                {
+                    if (board[move.EndX, move.EndY] != null) // Check if the target square is occupied
+                    {
+                        captureMoves.Add(move);
+                    }
+                }
+
+                return captureMoves;
+            }
+
+
+
+            // Example function to detect a check (you'll need to implement this)
+            private bool IsCheck(Move move, ChessBoard board)
+            {
+                Board.MakeMove(move);
+                bool isCheck = board.IsInCheck(!move.Piece.IsWhite);
+                UndoMove(move);
+                return isCheck;
+            }
+            private Dictionary<ulong, (int depth, int score)> transpositionTable = new Dictionary<ulong, (int depth, int score)>();
+
+            // Store a position in the transposition table
+            private void StoreInTranspositionTable(ulong hash, int depth, int score)
+            {
+                transpositionTable[hash] = (depth, score);
+            }
+
+            // Try to retrieve a position from the transposition table
+            private bool TryGetTransposition(ulong hash, int depth, out int score)
+            {
+                if (transpositionTable.TryGetValue(hash, out var entry))
+                {
+                    if (entry.depth >= depth)
+                    {
+                        score = entry.score;
+                        return true;
+                    }
+                }
+                score = 0;
+                return false;
+            }
+
+
+
+
+            private ulong[,] zobristTable;
+            private Random random = new Random();
+
+            // Initialize the Zobrist table
+            private void InitializeZobrist()
+            {
+                zobristTable = new ulong[64, 12]; // 64 squares, 12 possible pieces (6 types x 2 colors)
+
+                for (int square = 0; square < 64; square++)
+                {
+                    for (int piece = 0; piece < 12; piece++)
+                    {
+                        zobristTable[square, piece] = (ulong)random.Next() << 32 | (ulong)random.Next();
+                    }
+                }
+            }
+
+            // Compute the Zobrist hash for a given board state
+            private ulong ComputeZobristHash(ChessPiece[,] board)
+            {
+                ulong hash = 0;
+                for (int x = 0; x < 8; x++)
+                {
+                    for (int y = 0; y < 8; y++)
+                    {
+                        ChessPiece piece = board[x, y];
+                        if (piece != null)
+                        {
+                            int pieceIndex = GetPieceIndex(piece); // Get the index for the piece
+                            hash ^= zobristTable[y * 8 + x, pieceIndex]; // XOR with the precomputed value
+                        }
+                    }
+                }
+                return hash;
+            }
+
+            private int GetPieceIndex(ChessPiece piece)
+            {
+                int baseIndex;
+                switch (piece.Type)
+                {
+                    case PieceType.Pawn:
+                        baseIndex = 0;
+                        break;
+                    case PieceType.Knight:
+                        baseIndex = 1;
+                        break;
+                    case PieceType.Bishop:
+                        baseIndex = 2;
+                        break;
+                    case PieceType.Rook:
+                        baseIndex = 3;
+                        break;
+                    case PieceType.Queen:
+                        baseIndex = 4;
+                        break;
+                    case PieceType.King:
+                        baseIndex = 5;
+                        break;
+                    default:
+                        throw new ArgumentException("Unknown piece type");
+                }
+
+                
+                return baseIndex + (piece.IsWhite ? 0 : 6); 
+            }
+
+
 
             private int EvaluateControlOfMiddle(ChessPiece piece, int x, int y, ChessBoard chessBoard)
             {
@@ -731,6 +734,7 @@ namespace Chess
                 }
                 return 0;
             }
+
 
 
 
@@ -1066,7 +1070,7 @@ namespace Chess
 
 
 
-        private bool IsKingInCheck(ChessPiece[,] board, bool isWhite)
+        private static bool IsKingInCheck(ChessPiece[,] board, bool isWhite)
         {
             // Find the king's position
             int kingX = -1;
