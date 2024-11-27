@@ -513,28 +513,29 @@ namespace Chess
 
             private int AlphaBeta(int depth, int alpha, int beta, bool isMaximizingPlayer)
             {
-                ulong hash = ComputeZobristHash(Board.Board);
-
-                // Check transposition table
-                if (TryGetTransposition(hash, depth, out int cachedScore))
-                {
-                    return cachedScore;
-                }
-
                 if (depth == 0)
-                {
-                    return QuiescenceSearch(alpha, beta);
-                }
+                    return QuiescenceSearch(alpha, beta); 
 
                 List<Move> possibleMoves = GenerateMoves(Board.Board, isMaximizingPlayer);
                 possibleMoves = OrderMoves(possibleMoves, Board);
 
                 int bestScore = isMaximizingPlayer ? int.MinValue : int.MaxValue;
 
-                foreach (Move move in possibleMoves)
+                for (int i = 0; i < possibleMoves.Count; i++)
                 {
+                    Move move = possibleMoves[i];
+
+                    bool isCriticalMove = IsPromotionMove(move) || IsCheck(move, Board);
+
+                    int newDepth = depth - 1;
+                    if (!isCriticalMove && i > 3 && depth > 2) 
+                    {
+                        newDepth--;
+                    }
+
+                    // Make the move
                     Board.MakeMove(move);
-                    int eval = AlphaBeta(depth - 1, alpha, beta, !isMaximizingPlayer);
+                    int eval = AlphaBeta(newDepth, alpha, beta, !isMaximizingPlayer);
                     UndoMove(move);
 
                     if (isMaximizingPlayer)
@@ -549,13 +550,12 @@ namespace Chess
                     }
 
                     if (beta <= alpha)
-                        break; // Alpha-beta cutoff
+                        break;
                 }
 
-                // Store result in transposition table
-                StoreInTranspositionTable(hash, depth, bestScore);
                 return bestScore;
             }
+
 
 
 
@@ -563,16 +563,25 @@ namespace Chess
             {
                 return moves.OrderByDescending(move =>
                 {
-                    // Higher values for captures, promotions, or checks
-                    ChessPiece target = board.Board[move.EndX, move.EndY];
-                    int value = target != null ? GetPieceValue(target) : 0; // Capture value
-                    if (move.Piece is Pawn && (move.EndY == 0 || move.EndY == 7))
-                        value += 900; // Promotion value
+                    int value = 0;
+
+                    if (IsPromotionMove(move))
+                        value += 1000; // High value for promotions
+
+                    if (board.Board[move.EndX, move.EndY] != null)
+                        value += GetPieceValue(board.Board[move.EndX, move.EndY]); // Value for captures
+
                     if (IsCheck(move, board))
-                        value += 500; // Check value
+                        value += 500; // Value for checks
+
                     return value;
                 }).ToList();
             }
+            bool IsPromotionMove(Move move)
+            {
+                return move.Piece is Pawn && (move.EndY == 0 || move.EndY == 7);
+            }
+
             private int QuiescenceSearch(int alpha, int beta)
             {
                 int standPat = EvaluateBoard(Board); // Static evaluation
