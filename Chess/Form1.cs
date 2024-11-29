@@ -19,7 +19,8 @@ namespace Chess
         private int selectedX = -1;
         private int selectedY = -1;
         bool canMoveAI = false;
-
+        public List<ChessPiece[,]> MoveHistory { get; private set; } = new List<ChessPiece[,]>();
+        public int CurrentPreviewIndex { get; private set; } = -1; // -1 means no preview is active
 
         public enum GameMode
         {
@@ -405,12 +406,21 @@ namespace Chess
 
             public Move FindBestMove(int depth)
             {
+                List<Move> possibleMoves = GenerateMoves(Board.Board, IsWhite);
+
+                // Filter moves that put the king in check
+                possibleMoves = possibleMoves.Where(move =>
+                {
+                    Board.MakeMove(move);
+                    bool isSafe = !Board.IsInCheck(IsWhite);
+                    UndoMove(move);
+                    return isSafe;
+                }).ToList();
+
+                if (possibleMoves.Count == 0) return null;
+
                 Move bestMove = null;
                 int bestScore = int.MinValue;
-                List<Move> bestMoves = new List<Move>();
-
-                // Pass the board and AI's color to GenerateMoves
-                List<Move> possibleMoves = GenerateMoves(Board.Board, IsWhite);
 
                 foreach (Move move in possibleMoves)
                 {
@@ -421,17 +431,10 @@ namespace Chess
                     if (score > bestScore)
                     {
                         bestScore = score;
-                        bestMoves.Clear();
-                        bestMoves.Add(move);
-                    }
-                    else if (score == bestScore)
-                    {
-                        bestMoves.Add(move);
+                        bestMove = move;
                     }
                 }
 
-                Random rand = new Random();
-                bestMove = bestMoves[rand.Next(bestMoves.Count)]; // Select a random move among the best moves
                 return bestMove;
             }
 
@@ -453,7 +456,10 @@ namespace Chess
                                 {
                                     if (piece.IsValidMove(board, startX, startY, endX, endY))
                                     {
-                                        possibleMoves.Add(new Move(startX, startY, endX, endY, piece));
+                                        if (!IsInCheckAfterMove(board, startX, startY, endX, endY, isWhite))
+                                        {
+                                            possibleMoves.Add(new Move(startX, startY, endX, endY, piece));
+                                        }
                                     }
                                 }
                             }
@@ -461,6 +467,19 @@ namespace Chess
                     }
                 }
                 return possibleMoves;
+            }
+
+            private bool IsInCheckAfterMove(ChessPiece[,] board, int startX, int startY, int endX, int endY, bool isWhite)
+            {
+                ChessPiece[,] simulatedBoard = CloneBoard(board);
+                ChessPiece movingPiece = simulatedBoard[startX, startY];
+
+                // Simulate the move
+                simulatedBoard[endX, endY] = movingPiece;
+                simulatedBoard[startX, startY] = null;
+
+                // Check if the king is in check after the move
+                return IsKingInCheck(simulatedBoard, isWhite);
             }
 
 
