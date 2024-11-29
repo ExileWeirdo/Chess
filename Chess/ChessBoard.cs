@@ -25,7 +25,7 @@ namespace Chess
             boardStates = new Dictionary<string, int>();
             InitializeBoard();
         }
-       
+
         public void MakeMove(Move move)
         {
             int startX = move.StartX;
@@ -36,9 +36,8 @@ namespace Chess
             ChessPiece piece = Board[startX, startY];
             ChessPiece capturedPiece = Board[endX, endY];
 
-            // Store the captured piece in the move object
+            // Track captured piece and update board
             move.CapturedPiece = capturedPiece;
-
             if (capturedPiece != null)
             {
                 if (capturedPiece.IsWhite)
@@ -47,11 +46,13 @@ namespace Chess
                     CapturedBlackPieces.Add(capturedPiece);
             }
 
-            Board[endX, endY] = piece;
-            Board[startX, startY] = null;
+            Board[endX, endY] = piece; // Move the piece to the new position
+            Board[startX, startY] = null; // Clear the original position
 
-            IsWhiteTurn = !IsWhiteTurn;
+            IsWhiteTurn = !IsWhiteTurn; // Switch turns
+            LastMove = move; // Record the last move
         }
+
 
 
         public void InitializeBoard()

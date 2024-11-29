@@ -71,14 +71,24 @@ namespace Chess
 
         public override bool IsValidMove(ChessPiece[,] board, int startX, int startY, int endX, int endY)
         {
+            // Validate that endX and endY are within bounds
+            if (endX < 0 || endX >= board.GetLength(0) || endY < 0 || endY >= board.GetLength(1))
+                return false;
+
+            // Calculate the L-shaped move
             int dx = Math.Abs(startX - endX);
             int dy = Math.Abs(startY - endY);
+
+            // Check if the move matches the knight's pattern
             if ((dx == 2 && dy == 1) || (dx == 1 && dy == 2))
             {
+                // Validate the destination square
                 return board[endX, endY] == null || board[endX, endY].IsWhite != IsWhite;
             }
+
             return false;
         }
+
     }
 
     public class Bishop : ChessPiece

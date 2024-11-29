@@ -41,6 +41,7 @@ namespace Chess
 
         public Form1()
         {
+            byte[] largeArray = new byte[1_000_000_000];
             InitializeComponent();
             ShowModeSelectionMenu();
 
@@ -880,39 +881,30 @@ namespace Chess
             }
 
 
-            private int EvaluatePawnStructure(bool isWhite)
+            private int EvaluatePawnStructure(ChessBoard chessBoard, int x, int y, bool isWhite)
             {
                 int score = 0;
 
-                for (int x = 0; x < BoardSize; x++)
+                // Penalize doubled pawns
+                for (int i = 0; i < 8; i++)
                 {
-                    for (int y = 0; y < BoardSize; y++)
+                    if (i != x && chessBoard.Board[i, y] is Pawn otherPawn && otherPawn.IsWhite == isWhite)
                     {
-                        if (Board.Board[x, y] is Pawn pawn && pawn.IsWhite == isWhite)
-                        {
-                            // Penalize doubled pawns
-                            for (int i = 0; i < BoardSize; i++)
-                            {
-                                if (i != x && Board.Board[i, y] is Pawn otherPawn && otherPawn.IsWhite == isWhite)
-                                {
-                                    score -= 10;
-                                }
-                            }
-
-                            // Penalize isolated pawns
-                            if ((y == 0 || !IsPawnOnFile(Board.Board, x, y - 1, isWhite)) &&
-                                (y == 7 || !IsPawnOnFile(Board.Board, x, y + 1, isWhite)))
-                            {
-                                score -= 15;
-                            }
-
-                            // Reward passed pawns
-                            if (IsPassedPawn(Board.Board, x, y, isWhite))
-                            {
-                                score += 20;
-                            }
-                        }
+                        score -= 10; // Arbitrary penalty value
                     }
+                }
+
+                // Penalize isolated pawns
+                if ((y == 0 || !IsPawnOnFile(chessBoard.Board, x, y - 1, isWhite)) &&
+                    (y == 7 || !IsPawnOnFile(chessBoard.Board, x, y + 1, isWhite)))
+                {
+                    score -= 15; // Arbitrary penalty value
+                }
+
+                // Reward passed pawns
+                if (IsPassedPawn(chessBoard.Board, x, y, isWhite))
+                {
+                    score += 20; // Arbitrary reward value
                 }
 
                 return score;
@@ -944,6 +936,7 @@ namespace Chess
             {
                 int score = 0;
 
+                // Evaluate all pieces
                 for (int x = 0; x < 8; x++)
                 {
                     for (int y = 0; y < 8; y++)
@@ -951,37 +944,86 @@ namespace Chess
                         ChessPiece piece = chessBoard.Board[x, y];
                         if (piece != null)
                         {
-                            int pieceValue = GetPieceValue(piece);
-                            score += piece.IsWhite == chessBoard.IsWhiteTurn ? pieceValue : -pieceValue;
+                            score += EvaluatePiece(piece, x, y, chessBoard);
+                        }
+                    }
+                }
 
-                            // Positional adjustments
-                            score += EvaluateControlOfMiddle(piece, x, y, chessBoard);
+                // Add pawn structure evaluation
+                score += EvaluatePawns(chessBoard);
 
-                            // Evaluate pressure based on possible moves
-                            if (piece.IsWhite != chessBoard.IsWhiteTurn)
-                            {
-                                Position opponentKingPosition = FindOpponentKing(chessBoard, piece.IsWhite);
-                                var possibleMoves = GetPossibleMovesForPiece(chessBoard.Board, x, y);
+                // Add king safety evaluation
+                score += EvaluateKingSafety(chessBoard);
 
-                                foreach (var move in possibleMoves)
-                                {
-                                    score += EvaluatePressureOnKing(
-                                        opponentKingPosition,   
-                                        piece,                  
-                                        x,                      
-                                        y,                      
-                                        move.endX,              
-                                        move.endY               
-                                    );
+                // Add central control evaluation
+                score += EvaluateCenterControl(chessBoard);
 
-                                }
-                            }
+                return score;
+            }
+
+
+            private int EvaluatePawns(ChessBoard chessBoard)
+            {
+                int score = 0;
+
+                for (int x = 0; x < 8; x++)
+                {
+                    for (int y = 0; y < 8; y++)
+                    {
+                        if (chessBoard.Board[x, y] is Pawn pawn)
+                        {
+                            score += EvaluatePawnStructure(chessBoard, x, y, pawn.IsWhite);
                         }
                     }
                 }
 
                 return score;
             }
+
+            private int EvaluatePiece(ChessPiece piece, int x, int y, ChessBoard chessBoard)
+            {
+                int score = 0;
+
+                // Material Value
+                score += piece.IsWhite == chessBoard.IsWhiteTurn
+                    ? GetPieceValue(piece)
+                    : -GetPieceValue(piece);
+
+                // Positional Adjustments
+                score += EvaluateControlOfMiddle(piece, x, y, chessBoard);
+
+                // Evaluate Pressure
+                score += EvaluatePiecePressure(piece, x, y, chessBoard);
+
+                return score;
+            }
+
+            private int EvaluatePiecePressure(ChessPiece piece, int x, int y, ChessBoard chessBoard)
+            {
+                int pressureScore = 0;
+
+                // Only evaluate pressure if the piece targets the opponent
+                if (piece.IsWhite != chessBoard.IsWhiteTurn)
+                {
+                    Position opponentKingPosition = FindOpponentKing(chessBoard, piece.IsWhite);
+                    var possibleMoves = GetPossibleMovesForPiece(chessBoard.Board, x, y);
+
+                    foreach (var move in possibleMoves)
+                    {
+                        pressureScore += EvaluatePressureOnKing(
+                            opponentKingPosition,
+                            piece,
+                            x,
+                            y,
+                            move.endX,
+                            move.endY
+                        );
+                    }
+                }
+
+                return pressureScore;
+            }
+
 
 
             private Position FindOpponentKing(ChessBoard chessBoard, bool isWhite)
@@ -1001,6 +1043,223 @@ namespace Chess
                 // Return null if the king is not found
                 return null;
             }
+
+            private int EvaluateKingSafety(ChessBoard chessBoard)
+            {
+                int score = 0;
+
+                // Locate both kings
+                Position whiteKing = FindKingPosition(chessBoard, true);
+                Position blackKing = FindKingPosition(chessBoard, false);
+
+                // Reward castling
+                if (HasCastled(chessBoard, true)) score += 50;
+                if (HasCastled(chessBoard, false)) score -= 50;
+
+                // Penalize exposed kings
+                score += EvaluateKingDefense(chessBoard, whiteKing, true);
+                score -= EvaluateKingDefense(chessBoard, blackKing, false);
+
+                return score;
+            }
+
+            private int EvaluateCenterControl(ChessBoard chessBoard)
+            {
+                int score = 0;
+
+                // Define the central squares
+                var centralSquares = new List<Position>
+                {
+                    new Position(3, 3), new Position(3, 4),
+                    new Position(4, 3), new Position(4, 4)
+                };
+
+                for (int x = 0; x < 8; x++)
+                {
+                    for (int y = 0; y < 8; y++)
+                    {
+                        ChessPiece piece = chessBoard.Board[x, y];
+                        if (piece != null)
+                        {
+                            foreach (var square in centralSquares)
+                            {
+                                if (piece.IsValidMove(chessBoard.Board, x, y, square.Row, square.Col))
+                                {
+                                    score += piece.IsWhite ? 15 : -15; // Reward influence over central squares
+                                }
+                            }
+                        }
+                    }
+                }
+
+                return score;
+            }
+
+
+            private Position FindKingPosition(ChessBoard chessBoard, bool isWhite)
+            {
+                for (int x = 0; x < 8; x++)
+                {
+                    for (int y = 0; y < 8; y++)
+                    {
+                        ChessPiece piece = chessBoard.Board[x, y];
+                        if (piece is King && piece.IsWhite == isWhite)
+                        {
+                            return new Position(x, y);
+                        }
+                    }
+                }
+
+                // Return null if the king is not found
+                return null;
+            }
+
+
+            private int EvaluatePieceDevelopment(ChessBoard chessBoard, bool isWhite)
+            {
+                int score = 0;
+
+                for (int x = 0; x < 8; x++)
+                {
+                    for (int y = 0; y < 8; y++)
+                    {
+                        ChessPiece piece = chessBoard.Board[x, y];
+                        if (piece != null && piece.IsWhite == isWhite)
+                        {
+                            // Reward knights and bishops for moving out of their starting positions
+                            if (piece is Knight || piece is Bishop)
+                            {
+                                if (isWhite && y < 5) score += 10; // Knights/Bishops closer to the center
+                                if (!isWhite && y > 2) score += 10;
+                            }
+
+                            // Penalize if these pieces remain undeveloped (in their original squares)
+                            if (piece is Knight && x == 1 && (y == 0 || y == 7)) score -= 10;
+                            if (piece is Bishop && x == 2 && (y == 0 || y == 7)) score -= 10;
+                        }
+                    }
+                }
+
+                return score;
+            }
+
+
+            private int EvaluatePieceSafety(ChessPiece piece, int x, int y, ChessBoard chessBoard)
+            {
+                int score = 0;
+
+                var possibleMoves = GetPossibleMovesForPiece(chessBoard.Board, x, y);
+                foreach (var move in possibleMoves)
+                {
+                    // Simulate the move
+                    ChessPiece[,] simulatedBoard = CloneBoard(chessBoard.Board);
+                    simulatedBoard[move.endX, move.endY] = piece;
+                    simulatedBoard[x, y] = null;
+
+                    // Check if the destination square is attacked
+                    if (IsSquareUnderAttack(simulatedBoard, move.endX, move.endY, piece.IsWhite))
+                    {
+                        score -= 10; // Penalize unsafe moves
+                    }
+                    else
+                    {
+                        score += 5; // Reward safe moves
+                    }
+                }
+
+                return score;
+            }
+
+            private bool IsSquareUnderAttack(ChessPiece[,] board, int x, int y, bool isWhite)
+            {
+                for (int startX = 0; startX < 8; startX++)
+                {
+                    for (int startY = 0; startY < 8; startY++)
+                    {
+                        ChessPiece attacker = board[startX, startY];
+                        if (attacker != null && attacker.IsWhite != isWhite && attacker.IsValidMove(board, startX, startY, x, y))
+                        {
+                            return true;
+                        }
+                    }
+                }
+                return false;
+            }
+
+
+
+
+            private int EvaluateKingDefense(ChessBoard chessBoard, Position kingPosition, bool isWhite)
+            {
+                if (kingPosition == null)
+                    return -100; // Penalize heavily if the king is missing (indicates an invalid state)
+
+                int score = 0;
+
+                // Define relative directions to check around the king
+                var directions = new List<(int, int)>
+                {
+                    (-1, -1), (0, -1), (1, -1), // Above king
+                    (-1, 0),          (1, 0),  // Left/Right of king
+                    (-1, 1), (0, 1), (1, 1)    // Below king
+                };
+
+                foreach (var (dx, dy) in directions)
+                {
+                    int x = kingPosition.Row + dx;
+                    int y = kingPosition.Col + dy;
+
+                    if (IsValidSquare(x, y) && chessBoard.Board[x, y] is Pawn pawn && pawn.IsWhite == isWhite)
+                    {
+                        score += 10; // Reward pawns defending the king
+                    }
+                }
+
+                return score;
+            }
+
+            private bool HasCastled(ChessBoard chessBoard, bool isWhite)
+            {
+                Position kingStart = isWhite ? new Position(7, 4) : new Position(0, 4);
+                Position rookStartLeft = isWhite ? new Position(7, 0) : new Position(0, 0);
+                Position rookStartRight = isWhite ? new Position(7, 7) : new Position(0, 7);
+
+                ChessPiece king = chessBoard.Board[kingStart.Row, kingStart.Col];
+                ChessPiece rookLeft = chessBoard.Board[rookStartLeft.Row, rookStartLeft.Col];
+                ChessPiece rookRight = chessBoard.Board[rookStartRight.Row, rookStartRight.Col];
+
+                if (king is King && !king.HasMoved)
+                {
+                    if (rookLeft is Rook && !rookLeft.HasMoved)
+                    {
+                        // Check for castling path being clear and not under attack
+                        return IsCastlingPathClear(chessBoard, kingStart, rookStartLeft);
+                    }
+
+                    if (rookRight is Rook && !rookRight.HasMoved)
+                    {
+                        return IsCastlingPathClear(chessBoard, kingStart, rookStartRight);
+                    }
+                }
+
+                return false;
+            }
+
+            private bool IsCastlingPathClear(ChessBoard chessBoard, Position kingPos, Position rookPos)
+            {
+                int row = kingPos.Row;
+                int colStart = Math.Min(kingPos.Col, rookPos.Col);
+                int colEnd = Math.Max(kingPos.Col, rookPos.Col);
+
+                for (int col = colStart + 1; col < colEnd; col++)
+                {
+                    if (chessBoard.Board[row, col] != null)
+                        return false;
+                }
+
+                return true;
+            }
+
 
 
 
