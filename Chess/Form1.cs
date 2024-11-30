@@ -409,12 +409,19 @@ namespace Chess
             {
                 Move bestMove = null;
                 int bestScore = int.MinValue;
+
                 List<Move> possibleMoves = GenerateMoves(Board.Board, IsWhite);
 
                 foreach (Move move in possibleMoves)
                 {
                     Board.MakeMove(move);
+
+                    // Evaluate the board state after the move
                     int score = AlphaBeta(depth - 1, int.MinValue, int.MaxValue, false);
+
+                    // Penalize unsafe moves
+                    score += EvaluateMoveSafetyIntegration(move.Piece, move.StartX, move.StartY, move.EndX, move.EndY, Board.Board);
+
                     UndoMove(move);
 
                     if (score > bestScore)
@@ -426,6 +433,7 @@ namespace Chess
 
                 return bestMove;
             }
+
 
 
 
@@ -696,22 +704,83 @@ namespace Chess
                     return value;
                 }).ToList();
             }
-
-
-            private Move EnforceCentralControl(List<Move> moves)
+            private int EvaluateMoveSafetyIntegration(ChessPiece piece, int startX, int startY, int endX, int endY, ChessPiece[,] board)
             {
-                // Filter moves that place pieces in or near the center
-                var centralMoves = moves.Where(move =>
-                    (move.EndX >= 2 && move.EndX <= 5) && (move.EndY >= 2 && move.EndY <= 5)).ToList();
+                int score = 0;
 
-                if (centralMoves.Count > 0)
+                // Check if the move lands on an attacked square
+                score += EvaluateMoveSafety(board, piece, endX, endY);
+
+                return score;
+            }
+
+            private List<ChessPiece> GetPiecesUnderAttack(ChessPiece[,] board, bool isWhite)
+            {
+                List<ChessPiece> underAttackPieces = new List<ChessPiece>();
+
+                // Iterate through all pieces on the board
+                for (int x = 0; x < BoardSize; x++)
                 {
-                    // Select the best central move
-                    return centralMoves.OrderByDescending(move =>
-                        EvaluateCentralControl(move.Piece, move.EndX, move.EndY)).First();
+                    for (int y = 0; y < BoardSize; y++)
+                    {
+                        ChessPiece piece = board[x, y];
+                        if (piece != null && piece.IsWhite == isWhite) // Friendly piece
+                        {
+                            // Check if the piece is under attack
+                            for (int oppX = 0; oppX < BoardSize; oppX++)
+                            {
+                                for (int oppY = 0; oppY < BoardSize; oppY++)
+                                {
+                                    ChessPiece opponentPiece = board[oppX, oppY];
+                                    if (opponentPiece != null && opponentPiece.IsWhite != isWhite) // Opponent's piece
+                                    {
+                                        // If the opponent can attack this piece
+                                        if (opponentPiece.IsValidMove(board, oppX, oppY, x, y))
+                                        {
+                                            // Check value disparity
+                                            if (GetPieceValue(opponentPiece) < GetPieceValue(piece))
+                                            {
+                                                underAttackPieces.Add(piece);
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
                 }
 
-                return null; // No central moves found
+                return underAttackPieces;
+            }
+
+            private int EvaluateMoveSafety(ChessPiece[,] board, ChessPiece piece, int endX, int endY)
+            {
+                int penalty = 0;
+
+                // Iterate through all opponent pieces
+                for (int x = 0; x < BoardSize; x++)
+                {
+                    for (int y = 0; y < BoardSize; y++)
+                    {
+                        ChessPiece opponentPiece = board[x, y];
+
+                        if (opponentPiece != null && opponentPiece.IsWhite != piece.IsWhite) // Opponent's piece
+                        {
+                            // Check if the opponent piece can attack the destination square
+                            if (opponentPiece.IsValidMove(board, x, y, endX, endY))
+                            {
+                                int pieceValue = GetPieceValue(piece);
+                                int opponentPieceValue = GetPieceValue(opponentPiece);
+
+                                // Penalize if the opponent's piece is of lesser value
+                                if (opponentPieceValue < pieceValue)
+                                    penalty -= pieceValue - opponentPieceValue; // Higher penalty for bigger disparity
+                            }
+                        }
+                    }
+                }
+
+                return penalty;
             }
 
             private int EvaluateCapturePotential(Move move, ChessBoard board)
