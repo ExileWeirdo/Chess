@@ -16,6 +16,7 @@ namespace Chess
         public Move LastMove { get; set; }
         public Dictionary<string, int> boardStates;
         public event Action DisableButtonsEvent;
+        public int TurnCount { get; private set; } = 0;
 
         public ChessBoard()
         {
@@ -51,7 +52,10 @@ namespace Chess
 
             IsWhiteTurn = !IsWhiteTurn; // Switch turns
             LastMove = move; // Record the last move
+
+            TurnCount++; // Increment the turn counter
         }
+
 
 
 
