@@ -409,71 +409,24 @@ namespace Chess
             {
                 Move bestMove = null;
                 int bestScore = int.MinValue;
-                List<Move> bestMoves = new List<Move>();
-
-                // Generera alla möjliga drag för AI
                 List<Move> possibleMoves = GenerateMoves(Board.Board, IsWhite);
 
-                // Kontrollera hotade pjäser och agera defensivt om det behövs
-                if (Board.TurnCount > 1)
-                {
-                    List<Move> defensiveMoves = GetThreatenedPiecesMoves(Board);
-                    if (defensiveMoves.Count > 0)
-                    {
-                        // Välj det bästa defensiva draget
-                        Move bestDefensiveMove = defensiveMoves
-                            .OrderByDescending(move => EvaluateCapturePotential(move, Board))
-                            .FirstOrDefault();
-
-                        if (bestDefensiveMove != null)
-                            return bestDefensiveMove;
-                    }
-                }
-
-                // Utvärdera alla drag med alpha-beta-pruning och extra heuristik
                 foreach (Move move in possibleMoves)
                 {
-                    // Utför draget
                     Board.MakeMove(move);
-
-                    // Utvärdera draget med AlphaBeta-sökning
                     int score = AlphaBeta(depth - 1, int.MinValue, int.MaxValue, false);
-
-                    // Bonuser för tidig utveckling
-                    if (Board.TurnCount < 20)
-                    {
-                        score += EvaluatePieceDevelopment(move.Piece, move.StartX, move.StartY, move.EndX, move.EndY);
-                        score += EvaluateCentralControl(move.Piece, move.EndX, move.EndY) * 2; // Dubbel vikt för central kontroll
-                    }
-
-                    // Bonus för att fånga pjäser
-                    score += EvaluateCapturePotential(move, Board);
-
-                    // Ångra draget
                     UndoMove(move);
 
-                    // Håll reda på bästa drag
                     if (score > bestScore)
                     {
                         bestScore = score;
-                        bestMoves.Clear();
-                        bestMoves.Add(move);
+                        bestMove = move;
                     }
-                    else if (score == bestScore)
-                    {
-                        bestMoves.Add(move); // Lägg till om lika poäng
-                    }
-                }
-
-                // Välj ett slumpmässigt drag bland de bästa
-                if (bestMoves.Count > 0)
-                {
-                    Random rand = new Random();
-                    bestMove = bestMoves[rand.Next(bestMoves.Count)];
                 }
 
                 return bestMove;
             }
+
 
 
 
@@ -696,6 +649,24 @@ namespace Chess
                 return score;
             }
 
+            private bool IsEndGame(ChessPiece[,] board)
+            {
+                int pieceCount = 0;
+
+                // Count remaining non-pawn pieces
+                for (int x = 0; x < 8; x++)
+                {
+                    for (int y = 0; y < 8; y++)
+                    {
+                        ChessPiece piece = board[x, y];
+                        if (piece != null && !(piece is Pawn))
+                            pieceCount++;
+                    }
+                }
+
+                // Consider endgame if there are fewer than a specific number of non-pawn pieces
+                return pieceCount <= 6;
+            }
 
 
 
@@ -706,19 +677,26 @@ namespace Chess
                 return moves.OrderByDescending(move =>
                 {
                     int value = 0;
+                    // Reward piece development
+                    if (move.Piece is Knight || move.Piece is Bishop)
+                        value += 50;
 
-                    // Central control
-                    value += EvaluateCentralControl(move.Piece, move.EndX, move.EndY);
+                    // Penalize early king moves
+                    if (move.Piece is King)
+                        value -= 200;
 
-                    // Development incentives
-                    value += EvaluatePieceDevelopment(move.Piece, move.StartX, move.StartY, move.EndX, move.EndY);
-
-                    // Capture potential
-                    value += EvaluateCapturePotential(move, board);
+                    // Existing prioritization logic
+                    if (IsPromotionMove(move))
+                        value += 1000;
+                    if (board.Board[move.EndX, move.EndY] != null)
+                        value += GetPieceValue(board.Board[move.EndX, move.EndY]);
+                    if (IsCheck(move, board))
+                        value += 500;
 
                     return value;
                 }).ToList();
             }
+
 
             private Move EnforceCentralControl(List<Move> moves)
             {
@@ -915,19 +893,55 @@ namespace Chess
 
             private int EvaluateControlOfMiddle(ChessPiece piece, int x, int y, ChessBoard chessBoard)
             {
-                int[,] middleSquares = { { 3, 3 }, { 3, 4 }, { 4, 3 }, { 4, 4 } };
-                for (int i = 0; i < middleSquares.GetLength(0); i++)
-                {
-                    int middleX = middleSquares[i, 0];
-                    int middleY = middleSquares[i, 1];
+                // Define center squares as tuples
+                var centerSquares = new List<(int, int)> { (3, 3), (3, 4), (4, 3), (4, 4) };
+                int score = 0;
 
-                    if (piece.IsValidMove(chessBoard.Board, x, y, middleX, middleY))
+                foreach (var (centerX, centerY) in centerSquares)
+                {
+                    if (piece.IsValidMove(chessBoard.Board, x, y, centerX, centerY))
                     {
-                        return 20;
+                        score += 20; // Reward controlling center squares
                     }
                 }
-                return 0;
+
+                return score;
             }
+
+
+            private int EvaluateKingSafetyInOpening(ChessPiece[,] board, Position kingPosition, bool isWhite)
+            {
+                int penalty = 0;
+
+                // Penalize central positions early in the game
+                if ((kingPosition.Row > 2 && kingPosition.Row < 5) && (kingPosition.Col > 2 && kingPosition.Col < 5))
+                    penalty -= 100; // Strong penalty for central king in opening
+
+                // Reward castling positions
+                if ((isWhite && kingPosition.Row == 7 && (kingPosition.Col == 1 || kingPosition.Col == 6)) ||
+                    (!isWhite && kingPosition.Row == 0 && (kingPosition.Col == 1 || kingPosition.Col == 6)))
+                    penalty += 50; // Reward castling
+
+                return penalty;
+            }
+
+            private int EvaluateDevelopment(ChessPiece piece, int x, int y)
+            {
+                if (!(piece is Knight || piece is Bishop)) return 0;
+
+                int score = 0;
+
+                // Reward leaving initial squares
+                if (piece.IsWhite && y > 1) score += 30; // White knights/bishops
+                if (!piece.IsWhite && y < 6) score += 30; // Black knights/bishops
+
+                // Reward moving toward the center
+                if ((x == 2 || x == 5) && (y == 2 || y == 5))
+                    score += 20;
+
+                return score;
+            }
+
 
 
 
@@ -1102,29 +1116,28 @@ namespace Chess
             {
                 int score = 0;
 
-                for (int x = 0; x < BoardSize; x++)
+                for (int x = 0; x < 8; x++)
                 {
-                    for (int y = 0; y < BoardSize; y++)
+                    for (int y = 0; y < 8; y++)
                     {
                         ChessPiece piece = chessBoard.Board[x, y];
                         if (piece != null)
                         {
-                            // Base piece value
                             int pieceValue = GetPieceValue(piece);
                             score += piece.IsWhite == chessBoard.IsWhiteTurn ? pieceValue : -pieceValue;
 
-                            // Add development and central control scores
-                            score += EvaluatePieceDevelopment(piece, x, y, x, y);
-                            score += EvaluateCentralControl(piece, x, y);
-
-                            // Penalize unnecessary retreats
-                            score += PenalizePieceRetreat(piece, x, y, x, y);
+                            // Positional adjustments
+                            score += EvaluateControlOfMiddle(piece, x, y, chessBoard);
+                            score += EvaluateDevelopment(piece, x, y);
+                            score += EvaluateKingSafety(chessBoard.Board, piece, x, y);
                         }
                     }
                 }
 
                 return score;
             }
+
+
 
 
 
@@ -1210,24 +1223,32 @@ namespace Chess
                 return null;
             }
 
-            private int EvaluateKingSafety(ChessBoard chessBoard)
+            private int EvaluateKingSafety(ChessPiece[,] board, ChessPiece piece, int x, int y)
             {
+                if (!(piece is King)) return 0;
+
                 int score = 0;
 
-                // Locate both kings
-                Position whiteKing = FindKingPosition(chessBoard, true);
-                Position blackKing = FindKingPosition(chessBoard, false);
+                // Penalize king in the center early
+                if ((x > 2 && x < 5) && (y > 2 && y < 5))
+                    score -= 100;
 
-                // Reward castling
-                if (HasCastled(chessBoard, true)) score += 50;
-                if (HasCastled(chessBoard, false)) score -= 50;
+                // Reward castling positions
+                if ((piece.IsWhite && y == 7 && (x == 2 || x == 6)) || (!piece.IsWhite && y == 0 && (x == 2 || x == 6)))
+                    score += 50;
 
-                // Penalize exposed kings
-                score += EvaluateKingDefense(chessBoard, whiteKing, true);
-                score -= EvaluateKingDefense(chessBoard, blackKing, false);
+                // Penalize lack of pawn cover
+                for (int dx = -1; dx <= 1; dx++)
+                {
+                    int pawnRow = piece.IsWhite ? y - 1 : y + 1;
+                    int pawnCol = x + dx;
+                    if (IsValidSquare(pawnRow, pawnCol) && !(board[pawnCol, pawnRow] is Pawn))
+                        score -= 10;
+                }
 
                 return score;
             }
+
 
             private int EvaluateCenterControl(ChessBoard chessBoard)
             {
