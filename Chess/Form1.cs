@@ -346,13 +346,54 @@ namespace Chess
         private void MakeHardAIMove()
         {
             ChessAI ai = new ChessAI(false, chessBoard, false); // Assuming AI plays black
-            Move bestMove = ai.FindBestMove(4); 
+            Move aiMove = ai.FindBestMove(4);
 
-            if (bestMove != null)
+            if (aiMove != null)
             {
-                chessBoard.MakeMove(bestMove);
+                int startX = aiMove.StartX;
+                int startY = aiMove.StartY;
+                int endX = aiMove.EndX;
+                int endY = aiMove.EndY;
+
+                // Get the buttons for origin and destination squares
+                Button originButton = ChessBoardButtons[startX, startY];
+                Button destinationButton = ChessBoardButtons[endX, endY];
+
+                // Provide visual feedback for the AI's move
+                // Set origin square to dark yellow
+                originButton.BackColor = Color.DarkGoldenrod;
+
+                // Set destination square to light yellow
+                destinationButton.BackColor = Color.LightGoldenrodYellow;
+
+                // Perform the actual move
+                chessBoard.MovePiece(startX, startY, endX, endY);
+
+                // Check if the move results in check or checkmate
+                bool isCheck = chessBoard.IsInCheck(chessBoard.IsWhiteTurn);
+                bool isCheckmate = chessBoard.IsCheckmate(chessBoard.IsWhiteTurn);
+
+                if (isCheck)
+                {
+                    if (isCheckmate)
+                    {
+                        MessageBox.Show($"{(!chessBoard.IsWhiteTurn ? "White" : "Black")} wins by checkmate!");
+                        canMoveAI = false;
+                        DisableChessBoard(); // Disable the board after checkmate
+                        return;
+                    }
+                    else
+                    {
+                        MessageBox.Show($"{(!chessBoard.IsWhiteTurn ? "Black" : "White")} is in check!");
+                    }
+                }
+
+                // Reset the origin square's color
+                originButton.BackColor = (startX + startY) % 2 == 0 ? Color.White : Color.Gray;
+
+                // Update the UI after the AI's move
+                UpdateBoardUI();
             }
-            UpdateBoardUI();
         }
         
 
@@ -414,7 +455,7 @@ namespace Chess
 
                 foreach (Move move in possibleMoves)
                 {
-                    Board.MakeMove(move);
+                    Board.SimulateMove(move);
 
                     // Evaluate the board state after the move
                     int score = AlphaBeta(depth - 1, int.MinValue, int.MaxValue, false);
@@ -422,7 +463,7 @@ namespace Chess
                     // Penalize unsafe moves
                     score += EvaluateMoveSafetyIntegration(move.Piece, move.StartX, move.StartY, move.EndX, move.EndY, Board.Board);
 
-                    UndoMove(move);
+                    Board.UndoSimulatedMove(move);
 
                     if (score > bestScore)
                     {
@@ -566,9 +607,9 @@ namespace Chess
                     int maxEval = int.MinValue;
                     foreach (Move move in possibleMoves)
                     {
-                        Board.MakeMove(move);
+                        Board.SimulateMove(move);
                         int eval = Minimax(depth - 1, false);
-                        UndoMove(move);
+                        Board.UndoSimulatedMove(move);
                         maxEval = Math.Max(maxEval, eval);
                     }
                     return maxEval;
@@ -578,9 +619,9 @@ namespace Chess
                     int minEval = int.MaxValue;
                     foreach (Move move in possibleMoves)
                     {
-                        Board.MakeMove(move);
+                        Board.SimulateMove(move);
                         int eval = Minimax(depth - 1, true);
-                        UndoMove(move);
+                        Board.UndoSimulatedMove(move);
                         minEval = Math.Min(minEval, eval);
                     }
                     return minEval;
@@ -611,11 +652,11 @@ namespace Chess
 
                 foreach (Move move in possibleMoves)
                 {
-                    Board.MakeMove(move);
+                    Board.SimulateMove(move);
 
                     int eval = AlphaBeta(depth - 1, alpha, beta, !isMaximizingPlayer);
 
-                    UndoMove(move);
+                    Board.UndoSimulatedMove(move);
 
                     if (isMaximizingPlayer)
                     {
@@ -827,9 +868,9 @@ namespace Chess
                 List<Move> captureMoves = GenerateCaptureMoves(Board.Board, IsWhite);
                 foreach (var move in captureMoves)
                 {
-                    Board.MakeMove(move);
+                    Board.SimulateMove(move);
                     int eval = -QuiescenceSearch(-beta, -alpha); // Recurse with negated scores
-                    UndoMove(move);
+                    Board.UndoSimulatedMove(move);
 
                     if (eval >= beta)
                         return beta; // Beta cutoff
@@ -1881,29 +1922,35 @@ namespace Chess
 
             // Check if it's AI's turn and the game mode is single player
 
-            // Human player's turn+
+            // Human player's turn
             if (selectedX == -1 && selectedY == -1)
             {
                 if (chessBoard.Board[x, y] != null && chessBoard.Board[x, y].IsWhite == chessBoard.IsWhiteTurn)
                 {
+                    // Selecting a new piece
                     selectedX = x;
                     selectedY = y;
-                    clickedButton.BackColor = Color.Yellow;
+                    clickedButton.BackColor = Color.Yellow;  // Highlight the selected piece
                 }
             }
             else
             {
+                // Try to move the selected piece to the clicked position
                 if (chessBoard.MovePiece(selectedX, selectedY, x, y))
                 {
-                    UpdateBoardUI();
-                   
+                    // Visual feedback for the move (origin and destination)
+                    // Set origin square to dark yellow
+                    ChessBoardButtons[selectedX, selectedY].BackColor = Color.DarkGoldenrod;
 
-                    // Check for the opponent's check and checkmate
+                    // Set destination square to light yellow
+                    clickedButton.BackColor = Color.LightGoldenrodYellow;
+
+                    // Update the board and check for game status
+                    UpdateBoardUI();
+
+                    // Check for check and checkmate
                     bool isCheck = chessBoard.IsInCheck(chessBoard.IsWhiteTurn);
                     bool isCheckmate = chessBoard.IsCheckmate(chessBoard.IsWhiteTurn);
-
-
-                   
 
                     if (isCheck)
                     {
@@ -1911,32 +1958,37 @@ namespace Chess
                         {
                             MessageBox.Show($"{(!chessBoard.IsWhiteTurn ? "White" : "Black")} wins by checkmate!");
                             canMoveAI = false;
+                            DisableChessBoard(); // Disable the board after checkmate
+                            return;
                         }
                         else
                         {
                             MessageBox.Show($"{(!chessBoard.IsWhiteTurn ? "Black" : "White")} is in check!");
                         }
                     }
-                    else
-                    {
-                        this.BackColor = SystemColors.Control;
-                    }
+
+                    // If single-player mode, make the AI move
                     if (gameMode == GameMode.SinglePlayer)
                     {
                         MakeAIMove();
                     }
-                    
 
+                    // Deselect the piece after moving
+                    ChessBoardButtons[selectedX, selectedY].BackColor = (selectedX + selectedY) % 2 == 0 ? Color.White : Color.Gray;
+                    selectedX = -1;
+                    selectedY = -1;
+
+                    // Update the board UI after the move
+                    UpdateBoardUI();
                 }
-
-                ChessBoardButtons[selectedX, selectedY].BackColor = (selectedX + selectedY) % 2 == 0 ? Color.White : Color.Gray;
-                selectedX = -1;
-                selectedY = -1;
-                UpdateBoardUI();
-
-
+                else
+                {
+                    // If the move is invalid, reset the selection
+                    ChessBoardButtons[selectedX, selectedY].BackColor = (selectedX + selectedY) % 2 == 0 ? Color.White : Color.Gray;
+                    selectedX = -1;
+                    selectedY = -1;
+                }
             }
-
         }
 
 

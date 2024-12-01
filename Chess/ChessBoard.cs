@@ -41,19 +41,62 @@ namespace Chess
             move.CapturedPiece = capturedPiece;
             if (capturedPiece != null)
             {
-                if (capturedPiece.IsWhite)
-                    CapturedWhitePieces.Add(capturedPiece);
-                else
-                    CapturedBlackPieces.Add(capturedPiece);
+                Debug.WriteLine($"Captured White Pieces: {CapturedWhitePieces.Count}, Captured Black Pieces: {CapturedBlackPieces.Count}");
+                if (capturedPiece.IsWhite) // Captured piece is white
+                {
+                    CapturedWhitePieces.Add(capturedPiece); // Add to black's captured pieces
+                }
+                else // Captured piece is black
+                {
+                    CapturedBlackPieces.Add(capturedPiece); // Add to white's captured pieces
+                }
             }
 
-            Board[endX, endY] = piece; // Move the piece to the new position
-            Board[startX, startY] = null; // Clear the original position
+            // Move the piece to the new position
+            Board[endX, endY] = piece;
+            Board[startX, startY] = null;
 
-            IsWhiteTurn = !IsWhiteTurn; // Switch turns
-            LastMove = move; // Record the last move
+            // Switch turns
+            IsWhiteTurn = !IsWhiteTurn;
 
-            TurnCount++; // Increment the turn counter
+            // Record the last move
+            LastMove = move;
+
+            // Increment the turn counter
+            TurnCount++;
+        }
+
+        public void SimulateMove(Move move)
+        {
+            int startX = move.StartX;
+            int startY = move.StartY;
+            int endX = move.EndX;
+            int endY = move.EndY;
+
+            ChessPiece piece = Board[startX, startY];
+            ChessPiece capturedPiece = Board[endX, endY];
+
+            // Don't actually modify the captured pieces list during simulation
+            move.CapturedPiece = capturedPiece;
+
+            // Temporarily execute the move, without updating the captured pieces
+            Board[endX, endY] = piece;
+            Board[startX, startY] = null;
+        }
+
+        public void UndoSimulatedMove(Move move)
+        {
+            int startX = move.StartX;
+            int startY = move.StartY;
+            int endX = move.EndX;
+            int endY = move.EndY;
+
+            ChessPiece piece = Board[endX, endY];
+            ChessPiece capturedPiece = move.CapturedPiece;
+
+            // Undo the simulated move by restoring the previous board state
+            Board[startX, startY] = piece;
+            Board[endX, endY] = capturedPiece;
         }
 
 

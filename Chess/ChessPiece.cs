@@ -158,17 +158,25 @@ namespace Chess
         public override bool IsValidMove(ChessPiece[,] board, int startX, int startY, int endX, int endY)
         {
             int direction = IsWhite ? -1 : 1;
-            if (startX == endX && board[endX, endY] == null)
+
+            // Moving one square forward
+            if (startX == endX && endY == startY + direction && board[endX, endY] == null)
             {
-                if (startY + direction == endY)
-                    return true;
-                if ((IsWhite && startY == 6 || !IsWhite && startY == 1) && startY + 2 * direction == endY)
-                    return true;
+                return true;
             }
-            else if (Math.Abs(startX - endX) == 1 && startY + direction == endY && board[endX, endY] != null)
+
+            // Moving two squares forward on the first move
+            if (startX == endX && endY == startY + 2 * direction && board[endX, endY] == null && board[startX, startY + direction] == null && !HasMoved)
             {
-                return board[endX, endY].IsWhite != IsWhite;
+                return true;
             }
+
+            // Capturing diagonally
+            if (Math.Abs(startX - endX) == 1 && endY == startY + direction && board[endX, endY] != null && board[endX, endY].IsWhite != IsWhite)
+            {
+                return true;
+            }
+
             return false;
         }
     }
