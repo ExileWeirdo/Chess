@@ -450,30 +450,39 @@ namespace Chess
             {
                 Move bestMove = null;
                 int bestScore = int.MinValue;
+                List<Move> bestMoves = new List<Move>();
 
                 List<Move> possibleMoves = GenerateMoves(Board.Board, IsWhite);
 
                 foreach (Move move in possibleMoves)
                 {
-                    Board.SimulateMove(move);
-
-                    // Evaluate the board state after the move
+                    Board.MakeMove(move);
                     int score = AlphaBeta(depth - 1, int.MinValue, int.MaxValue, false);
-
-                    // Penalize unsafe moves
-                    score += EvaluateMoveSafetyIntegration(move.Piece, move.StartX, move.StartY, move.EndX, move.EndY, Board.Board);
-
-                    Board.UndoSimulatedMove(move);
+                    UndoMove(move);
 
                     if (score > bestScore)
                     {
                         bestScore = score;
-                        bestMove = move;
+                        bestMoves.Clear();
+                        bestMoves.Add(move);
                     }
+                    else if (score == bestScore)
+                    {
+                        bestMoves.Add(move);
+                    }
+                }
+
+                // Randomly select a move among the best moves
+                Random rand = new Random();
+                if (bestMoves.Count > 0)
+                {
+                    bestMove = bestMoves[rand.Next(bestMoves.Count)];
                 }
 
                 return bestMove;
             }
+
+
 
 
 
@@ -1234,17 +1243,103 @@ namespace Chess
                         if (piece != null)
                         {
                             int pieceValue = GetPieceValue(piece);
+                            int positionalScore = EvaluatePosition(piece, x, y);
+                            int centerControlScore = EvaluateCenterControl(piece, x, y, chessBoard);
+
+                            // Basic material value
                             score += piece.IsWhite == chessBoard.IsWhiteTurn ? pieceValue : -pieceValue;
 
-                            // Positional adjustments
-                            score += EvaluateControlOfMiddle(piece, x, y, chessBoard);
-                            score += EvaluateDevelopment(piece, x, y);
-                            score += EvaluateKingSafety(chessBoard.Board, piece, x, y);
+                            // Positional and central control
+                            score += piece.IsWhite == chessBoard.IsWhiteTurn
+                                ? (positionalScore + centerControlScore)
+                                : -(positionalScore + centerControlScore);
                         }
                     }
                 }
 
+                // Adjust score for overall map control
+                score += EvaluateMapControl(chessBoard);
+
                 return score;
+            }
+            private int EvaluateMapControl(ChessBoard chessBoard)
+            {
+                int aiControlledSquares = 0;
+                int opponentControlledSquares = 0;
+
+                for (int x = 0; x < 8; x++)
+                {
+                    for (int y = 0; y < 8; y++)
+                    {
+                        ChessPiece piece = chessBoard.Board[x, y];
+                        if (piece != null)
+                        {
+                            List<(int, int)> validMoves = GetValidMovesForPiece(chessBoard.Board, x, y);
+
+                            foreach (var move in validMoves)
+                            {
+                                int targetX = move.Item1;
+                                int targetY = move.Item2;
+
+                                if (piece.IsWhite == chessBoard.IsWhiteTurn)
+                                {
+                                    if (targetY < 4) // AI controls opponent's side
+                                        aiControlledSquares++;
+                                }
+                                else
+                                {
+                                    if (targetY >= 4) // Opponent controls AI's side
+                                        opponentControlledSquares++;
+                                }
+                            }
+                        }
+                    }
+                }
+
+                // Score adjustment
+                return (aiControlledSquares - opponentControlledSquares) * 5; // Adjust weight as needed
+            }
+
+
+            private List<(int, int)> GetValidMovesForPiece(ChessPiece[,] board, int startX, int startY)
+            {
+                List<(int, int)> validMoves = new List<(int, int)>();
+
+                ChessPiece piece = board[startX, startY];
+                if (piece != null)
+                {
+                    for (int endX = 0; endX < BoardSize; endX++)
+                    {
+                        for (int endY = 0; endY < BoardSize; endY++)
+                        {
+                            if (piece.IsValidMove(board, startX, startY, endX, endY))
+                            {
+                                validMoves.Add((endX, endY));
+                            }
+                        }
+                    }
+                }
+
+                return validMoves;
+            }
+
+            private int EvaluateCenterControl(ChessPiece piece, int x, int y, ChessBoard chessBoard)
+            {
+                // Central squares on the chessboard
+                int[,] centralSquares = { { 3, 3 }, { 3, 4 }, { 4, 3 }, { 4, 4 } };
+
+                for (int i = 0; i < centralSquares.GetLength(0); i++)
+                {
+                    int centerX = centralSquares[i, 0];
+                    int centerY = centralSquares[i, 1];
+
+                    if (piece.IsValidMove(chessBoard.Board, x, y, centerX, centerY))
+                    {
+                        return piece is Pawn ? 10 : 20; // Higher reward for central pawn control
+                    }
+                }
+
+                return 0;
             }
 
 
@@ -1536,6 +1631,122 @@ namespace Chess
                 return false;
             }
 
+            private List<Move> GetMovesForThreatenedPieces(ChessPiece[,] board, bool isWhite)
+            {
+                List<Move> defensiveMoves = new List<Move>();
+                Dictionary<Type, int> pieceValues = new Dictionary<Type, int>
+    {
+        { typeof(Pawn), 1 },
+        { typeof(Knight), 3 },
+        { typeof(Bishop), 3 },
+        { typeof(Rook), 5 },
+        { typeof(Queen), 9 },
+        { typeof(King), 1000 }
+    };
+
+                for (int x = 0; x < BoardSize; x++)
+                {
+                    for (int y = 0; y < BoardSize; y++)
+                    {
+                        ChessPiece piece = board[x, y];
+                        if (piece != null && piece.IsWhite == isWhite)
+                        {
+                            List<(int, int)> threats = GetThreats(board, x, y, !isWhite);
+
+                            foreach (var threat in threats)
+                            {
+                                ChessPiece attackingPiece = board[threat.Item1, threat.Item2];
+                                if (attackingPiece != null)
+                                {
+                                    int attackerValue = pieceValues[attackingPiece.GetType()];
+                                    int pieceValue = pieceValues[piece.GetType()];
+
+                                    if (attackerValue < pieceValue)
+                                    {
+                                        // Flytta till säker position
+                                        defensiveMoves.AddRange(GetSafeMoves(board, x, y));
+                                    }
+                                    else
+                                    {
+                                        // Försvara pjäsen
+                                        defensiveMoves.AddRange(GetMovesToDefend(board, x, y, isWhite));
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+
+                return defensiveMoves;
+            }
+
+            private List<(int, int)> GetThreats(ChessPiece[,] board, int x, int y, bool isOpponent)
+            {
+                List<(int, int)> threats = new List<(int, int)>();
+
+                for (int i = 0; i < BoardSize; i++)
+                {
+                    for (int j = 0; j < BoardSize; j++)
+                    {
+                        ChessPiece attackingPiece = board[i, j];
+                        if (attackingPiece != null && attackingPiece.IsWhite == isOpponent)
+                        {
+                            if (attackingPiece.IsValidMove(board, i, j, x, y))
+                            {
+                                threats.Add((i, j));
+                            }
+                        }
+                    }
+                }
+
+                return threats;
+            }
+
+            private List<Move> GetSafeMoves(ChessPiece[,] board, int startX, int startY)
+            {
+                List<Move> safeMoves = new List<Move>();
+
+                foreach (var move in GetPossibleMovesForPiece(board, startX, startY))
+                {
+                    ChessPiece[,] simulatedBoard = CloneBoard(board);
+                    simulatedBoard[move.endX, move.endY] = simulatedBoard[startX, startY];
+                    simulatedBoard[startX, startY] = null;
+
+                    if (!IsPieceThreatened(simulatedBoard, move.endX, move.endY))
+                    {
+                        safeMoves.Add(new Move(startX, startY, move.endX, move.endY, board[startX, startY]));
+                    }
+                }
+
+                return safeMoves;
+            }
+
+            private bool IsPieceThreatened(ChessPiece[,] board, int x, int y)
+            {
+                return GetThreats(board, x, y, true).Count > 0;
+            }
+
+            private List<Move> GetMovesToDefend(ChessPiece[,] board, int targetX, int targetY, bool isWhite)
+            {
+                List<Move> defendMoves = new List<Move>();
+
+                for (int x = 0; x < BoardSize; x++)
+                {
+                    for (int y = 0; y < BoardSize; y++)
+                    {
+                        ChessPiece piece = board[x, y];
+                        if (piece != null && piece.IsWhite == isWhite)
+                        {
+                            if (piece.IsValidMove(board, x, y, targetX, targetY))
+                            {
+                                defendMoves.Add(new Move(x, y, targetX, targetY, piece));
+                            }
+                        }
+                    }
+                }
+
+                return defendMoves;
+            }
 
 
 
@@ -1616,20 +1827,25 @@ namespace Chess
 
             private int EvaluatePosition(ChessPiece piece, int x, int y)
             {
-                int positionScore = 0;
-                // Example: Favor central squares for pieces
-                if (piece is Pawn)
-                {
-                    positionScore += (int)(10 - Math.Abs(x - 3.5) - Math.Abs(y - 3.5));
-                }
-                else if (piece is Knight || piece is Bishop)
-                {
-                    positionScore += (int)(5 - Math.Abs(x - 3.5) - Math.Abs(y - 3.5));
-                }
-                // Add more rules for other pieces...
+                int penalty = 0;
 
-                return positionScore;
+                if (piece is Knight || piece is Bishop)
+                {
+                    // Penalize returning to starting positions
+                    if ((piece.IsWhite && y == 7) || (!piece.IsWhite && y == 0))
+                    {
+                        penalty -= 10;
+                    }
+                }
+                else if (piece is Pawn)
+                {
+                    // Reward advancing pawns toward the opponent's side
+                    penalty += piece.IsWhite ? y : (7 - y);
+                }
+
+                return penalty;
             }
+
 
             private int GetPieceValue(ChessPiece piece)
             {
