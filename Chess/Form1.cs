@@ -436,37 +436,166 @@ namespace Chess
             {
                 Move bestMove = null;
                 int bestScore = int.MinValue;
-                List<Move> bestMoves = new List<Move>();
 
-                List<Move> possibleMoves = GenerateMoves(Board.Board, IsWhite);
+                // Generate all possible moves
+                List<Move> allMoves = GenerateMoves(Board.Board, IsWhite);
 
-                foreach (Move move in possibleMoves)
+                foreach (Move move in allMoves)
                 {
-                    Board.SimulateMove(move);
-                    int score = AlphaBeta(depth - 1, int.MinValue, int.MaxValue, false);
-                    Board.UndoSimulatedMove(move);
+                    // Simulate the move
+                    Board.MakeMove(move);
 
+                    // Use EvaluateMove to assess the move
+                    int score = EvaluateMove(move);
+
+                    // If depth allows, refine score using AlphaBeta for deeper analysis
+                    if (depth > 1)
+                    {
+                        score += AlphaBeta(depth - 1, int.MinValue, int.MaxValue, false);
+                    }
+
+                    // Undo the move
+                    UndoMove(move);
+
+                    // Update the best move if the score is higher
                     if (score > bestScore)
                     {
                         bestScore = score;
-                        bestMoves.Clear();
-                        bestMoves.Add(move);
+                        bestMove = move;
                     }
-                    else if (score == bestScore)
-                    {
-                        bestMoves.Add(move);
-                    }
-                }
-
-                // Randomly select a move among the best moves
-                Random rand = new Random();
-                if (bestMoves.Count > 0)
-                {
-                    bestMove = bestMoves[rand.Next(bestMoves.Count)];
                 }
 
                 return bestMove;
             }
+
+
+
+            private int EvaluateMove(Move move)
+            {
+                int score = 0;
+
+                // Simulate the board state after the move
+                ChessPiece[,] simulatedBoard = CloneBoard(Board.Board);
+                simulatedBoard[move.EndX, move.EndY] = simulatedBoard[move.StartX, move.StartY];
+                simulatedBoard[move.StartX, move.StartY] = null;
+
+                // 1. Evaluate positional advantages (retain existing logic)
+                score += EvaluateControlOfMiddle(move.Piece, move.EndX, move.EndY, Board);
+
+                // 2. Penalize leaving high-value pieces exposed
+                if (IsPieceThreatened(simulatedBoard, move.EndX, move.EndY))
+                {
+                    score -= GetPieceValue(move.Piece) * 2; // High penalty for exposing valuable pieces
+                }
+
+                // 3. Evaluate potential threats against opponent pieces
+                score += EvaluatePressureOnOpponent(simulatedBoard, move.EndX, move.EndY);
+
+                // 4. Encourage safety for all valuable pieces
+                if (IsAnyPieceThreatened(simulatedBoard, move.Piece.IsWhite))
+                {
+                    score -= 50; // Penalize positions where any piece is under attack
+                }
+
+                // 5. Add existing evaluations (e.g., material advantage, piece development)
+                score += EvaluateMaterialAdvantage(simulatedBoard);
+
+                return score;
+            }
+            private int EvaluatePressureOnOpponent(ChessPiece[,] board, int x, int y)
+            {
+                int pressureScore = 0;
+
+                // Ensure board[x, y] is not null before trying to access it
+                ChessPiece piece = board[x, y];
+                if (piece == null)
+                {
+                    return 0; // If the piece at (x, y) is null, there's no pressure to evaluate
+                }
+
+                // Iterate through the board to evaluate threats against opponent pieces
+                for (int targetX = 0; targetX < 8; targetX++)
+                {
+                    for (int targetY = 0; targetY < 8; targetY++)
+                    {
+                        ChessPiece targetPiece = board[targetX, targetY];
+
+                        // Proceed if targetPiece is not null and is an opponent's piece
+                        if (targetPiece != null && targetPiece.IsWhite != piece.IsWhite)
+                        {
+                            // Check if the piece at (x, y) threatens the opponent's piece
+                            if (piece.IsValidMove(board, x, y, targetX, targetY))
+                            {
+                                // Reward for threatening opponent pieces
+                                pressureScore += GetPieceValue(targetPiece) / 2; // Higher value for threatening high-value pieces
+                            }
+                        }
+                    }
+                }
+
+                return pressureScore;
+            }
+
+
+            private int EvaluateMaterialAdvantage(ChessPiece[,] board)
+            {
+                int whiteScore = 0;
+                int blackScore = 0;
+
+                // Iterate through the board and calculate the total material value for each side
+                for (int x = 0; x < 8; x++)
+                {
+                    for (int y = 0; y < 8; y++)
+                    {
+                        ChessPiece piece = board[x, y];
+                        if (piece != null)
+                        {
+                            int pieceValue = GetPieceValue(piece);
+                            if (piece.IsWhite)
+                            {
+                                whiteScore += pieceValue;
+                            }
+                            else
+                            {
+                                blackScore += pieceValue;
+                            }
+                        }
+                    }
+                }
+
+                // Return the advantage as positive if white is ahead, or negative if black is ahead
+                return (IsWhite ? whiteScore - blackScore : blackScore - whiteScore);
+            }
+
+            private bool IsEarlyGame()
+            {
+                // Kontrollera baserat på antal drag eller om bara få pjäser har flyttats
+                int moveCount = Board.TurnCount; // Förutsätter att vi håller koll på antal drag
+                return moveCount < 10; // Tidigt spel om färre än 10 drag har gjorts
+            }
+
+            private int EvaluateEarlyGameMove(Move move)
+            {
+                int score = 0;
+
+                // Belöna utveckling av springare och löpare
+                if (move.Piece is Knight || move.Piece is Bishop)
+                {
+                    score += 50;
+                }
+
+                // Belöna kontroll av centrum
+                score += EvaluateControlOfMiddle(move.Piece, move.StartX, move.StartY, Board);
+
+                // Straffa kungsdrag
+                if (move.Piece is King)
+                {
+                    score -= 100;
+                }
+
+                return score;
+            }
+
 
 
 
@@ -721,25 +850,17 @@ namespace Chess
                 return moves.OrderByDescending(move =>
                 {
                     int value = 0;
-                    // Reward piece development
-                    if (move.Piece is Knight || move.Piece is Bishop)
-                        value += 50;
 
-                    // Penalize early king moves
-                    if (move.Piece is King)
-                        value -= 200;
+                    if (board.Board[move.StartX, move.StartY] is Knight || board.Board[move.StartX, move.StartY] is Bishop)
+                    {
+                        value += 50; // Prioritera att utveckla dessa pjäser
+                    }
 
-                    // Existing prioritization logic
-                    if (IsPromotionMove(move))
-                        value += 1000;
-                    if (board.Board[move.EndX, move.EndY] != null)
-                        value += GetPieceValue(board.Board[move.EndX, move.EndY]);
-                    if (IsCheck(move, board))
-                        value += 500;
-
+                    value += EvaluateControlOfMiddle(board.Board[move.StartX, move.StartY], move.StartX, move.StartY, board);
                     return value;
                 }).ToList();
             }
+
             private int EvaluateMoveSafetyIntegration(ChessPiece piece, int startX, int startY, int endX, int endY, ChessPiece[,] board)
             {
                 int score = 0;
@@ -998,20 +1119,23 @@ namespace Chess
 
             private int EvaluateControlOfMiddle(ChessPiece piece, int x, int y, ChessBoard chessBoard)
             {
-                // Define center squares as tuples
-                var centerSquares = new List<(int, int)> { (3, 3), (3, 4), (4, 3), (4, 4) };
-                int score = 0;
-
-                foreach (var (centerX, centerY) in centerSquares)
+                int[,] middleSquares = { { 3, 3 }, { 3, 4 }, { 4, 3 }, { 4, 4 } };
+                for (int i = 0; i < middleSquares.GetLength(0); i++)
                 {
-                    if (piece.IsValidMove(chessBoard.Board, x, y, centerX, centerY))
+                    int middleX = middleSquares[i, 0];
+                    int middleY = middleSquares[i, 1];
+
+                    if (piece.IsValidMove(chessBoard.Board, x, y, middleX, middleY))
                     {
-                        score += 20; // Reward controlling center squares
+                        if (piece is Knight || piece is Bishop)
+                            return 30; // Högre poäng för springare och löpare
+                        else if (piece is Pawn)
+                            return 20;
                     }
                 }
-
-                return score;
+                return 0;
             }
+
 
 
             private int EvaluateKingSafetyInOpening(ChessPiece[,] board, Position kingPosition, bool isWhite)
@@ -1695,10 +1819,13 @@ namespace Chess
                 foreach (var move in GetPossibleMovesForPiece(board, startX, startY))
                 {
                     ChessPiece[,] simulatedBoard = CloneBoard(board);
+
+                    // Simulate the move
                     simulatedBoard[move.endX, move.endY] = simulatedBoard[startX, startY];
                     simulatedBoard[startX, startY] = null;
 
-                    if (!IsPieceThreatened(simulatedBoard, move.endX, move.endY))
+                    // Check if the moved piece or other important pieces are safe
+                    if (!IsAnyPieceThreatened(simulatedBoard, simulatedBoard[move.endX, move.endY].IsWhite))
                     {
                         safeMoves.Add(new Move(startX, startY, move.endX, move.endY, board[startX, startY]));
                     }
@@ -1706,11 +1833,92 @@ namespace Chess
 
                 return safeMoves;
             }
+            private bool IsAnyPieceThreatened(ChessPiece[,] board, bool isWhite)
+            {
+                for (int x = 0; x < 8; x++)
+                {
+                    for (int y = 0; y < 8; y++)
+                    {
+                        ChessPiece piece = board[x, y];
+                        if (piece != null && piece.IsWhite == isWhite)
+                        {
+                            if (IsPieceThreatened(board, x, y))
+                            {
+                                return true; // A piece is under threat
+                            }
+                        }
+                    }
+                }
+                return false; // No threats detected
+            }
+
 
             private bool IsPieceThreatened(ChessPiece[,] board, int x, int y)
             {
-                return GetThreats(board, x, y, true).Count > 0;
+                ChessPiece targetPiece = board[x, y];
+                if (targetPiece == null) return false;
+
+                foreach (var attacker in GetPotentialAttackers(x, y, !targetPiece.IsWhite))
+                {
+                    if (attacker != null)
+                    {
+                        return true; // The piece is under attack
+                    }
+                }
+                return false;
             }
+
+
+            private int GetAttackersValue(int x, int y)
+            {
+                int value = 0;
+                foreach (var attacker in GetPotentialAttackers(x, y, !IsWhite))
+                {
+                    value += GetPieceValue(attacker);
+                }
+                return value;
+            }
+
+            private int GetDefendersValue(int x, int y)
+            {
+                int value = 0;
+                foreach (var defender in GetPotentialDefenders(x, y, IsWhite))
+                {
+                    value += GetPieceValue(defender);
+                }
+                return value;
+            }
+
+            private IEnumerable<ChessPiece> GetPotentialAttackers(int x, int y, bool isWhite)
+            {
+                for (int startX = 0; startX < 8; startX++)
+                {
+                    for (int startY = 0; startY < 8; startY++)
+                    {
+                        ChessPiece piece = Board.Board[startX, startY];
+                        if (piece != null && piece.IsWhite == isWhite && piece.IsValidMove(Board.Board, startX, startY, x, y))
+                        {
+                            yield return piece;
+                        }
+                    }
+                }
+            }
+
+            private IEnumerable<ChessPiece> GetPotentialDefenders(int x, int y, bool isWhite)
+            {
+                for (int startX = 0; startX < 8; startX++)
+                {
+                    for (int startY = 0; startY < 8; startY++)
+                    {
+                        ChessPiece piece = Board.Board[startX, startY];
+                        if (piece != null && piece.IsWhite == isWhite && piece.IsValidMove(Board.Board, startX, startY, x, y))
+                        {
+                            yield return piece;
+                        }
+                    }
+                }
+            }
+
 
             private List<Move> GetMovesToDefend(ChessPiece[,] board, int targetX, int targetY, bool isWhite)
             {
@@ -1837,12 +2045,12 @@ namespace Chess
             {
                 switch (piece.Type)
                 {
-                    case PieceType.Pawn: return 1;
-                    case PieceType.Knight: return 3;
-                    case PieceType.Bishop: return 3;
-                    case PieceType.Rook: return 5;
-                    case PieceType.Queen: return 9;
-                    case PieceType.King: return 20;
+                    case PieceType.Pawn: return 100;
+                    case PieceType.Knight: return 320;
+                    case PieceType.Bishop: return 330;
+                    case PieceType.Rook: return 500;
+                    case PieceType.Queen: return 900;
+                    case PieceType.King: return 20000;
                     default: return 0;
                 }
             }
