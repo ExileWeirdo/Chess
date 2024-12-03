@@ -347,27 +347,12 @@ namespace Chess
         {
             ChessAI ai = new ChessAI(false, chessBoard, false); // Assuming AI plays black
             Move aiMove = ai.FindBestMove(4);
-
             if (aiMove != null)
             {
-                int startX = aiMove.StartX;
-                int startY = aiMove.StartY;
-                int endX = aiMove.EndX;
-                int endY = aiMove.EndY;
+                Console.WriteLine("Move was Found");
 
-                // Get the buttons for origin and destination squares
-                Button originButton = ChessBoardButtons[startX, startY];
-                Button destinationButton = ChessBoardButtons[endX, endY];
-
-                // Provide visual feedback for the AI's move
-                // Set origin square to dark yellow
-                originButton.BackColor = Color.DarkGoldenrod;
-
-                // Set destination square to light yellow
-                destinationButton.BackColor = Color.LightGoldenrodYellow;
-
-                // Perform the actual move
-                chessBoard.MovePiece(startX, startY, endX, endY);
+                // Perform the actual move'
+                chessBoard.MakeMove(aiMove);
 
                 // Check if the move results in check or checkmate
                 bool isCheck = chessBoard.IsInCheck(chessBoard.IsWhiteTurn);
@@ -388,11 +373,12 @@ namespace Chess
                     }
                 }
 
-                // Reset the origin square's color
-                originButton.BackColor = (startX + startY) % 2 == 0 ? Color.White : Color.Gray;
 
                 // Update the UI after the AI's move
                 UpdateBoardUI();
+            } else
+            {
+                Console.WriteLine("Move Not Found");
             }
         }
         
@@ -456,9 +442,9 @@ namespace Chess
 
                 foreach (Move move in possibleMoves)
                 {
-                    Board.MakeMove(move);
+                    Board.SimulateMove(move);
                     int score = AlphaBeta(depth - 1, int.MinValue, int.MaxValue, false);
-                    UndoMove(move);
+                    Board.UndoSimulatedMove(move);
 
                     if (score > bestScore)
                     {
