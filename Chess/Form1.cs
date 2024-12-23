@@ -446,8 +446,8 @@ namespace Chess
                     Board.MakeMove(move);
 
                     // Use EvaluateMove to assess the move
-                    int score = EvaluateMove(move);
 
+                    int score = EvaluateMove(move);
                     // If depth allows, refine score using AlphaBeta for deeper analysis
                     if (depth > 1)
                     {
