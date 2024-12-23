@@ -396,7 +396,10 @@ namespace Chess
                 IsWhite = isWhite;
                 Board = board;
                 IsWhiteTurn = isAIStartingTurn;
+
+                InitializeZobrist(); // Ensure zobristTable is initialized
             }
+
 
             public void UndoMove(Move move)
             {
@@ -483,7 +486,7 @@ namespace Chess
                 score += EvaluateControlOfMiddle(move.Piece, move.EndX, move.EndY, Board);
 
                 // 2. Penalize leaving high-value pieces exposed
-                if (IsPieceThreatened(simulatedBoard, move.EndX, move.EndY))
+                if (IsPieceThreatened(simulatedBoard, move.EndX, move.EndY,IsWhite))
                 {
                     score -= GetPieceValue(move.Piece) * 2; // High penalty for exposing valuable pieces
                 }
@@ -754,33 +757,32 @@ namespace Chess
 
 
 
+            // Optimizing AI move calculation by prioritizing free captures and assuming opponent will do the same.
+
             private int AlphaBeta(int depth, int alpha, int beta, bool isMaximizingPlayer)
             {
                 if (depth == 0)
-                {
-                    int baseScore = EvaluateBoard(Board);
+                    return QuiescenceSearch(alpha, beta); // Use Quiescence Search for better static evaluation
 
-                    // Add development and central control bonuses in early game
-                    if (Board.TurnCount < 20) // Early game
-                    {
-                        baseScore += EvaluateBoardForDevelopmentAndCentralControl();
-                    }
-
-                    return baseScore;
-                }
+                ulong currentHash = ComputeZobristHash(Board.Board);
+                if (TryGetTransposition(currentHash, depth, out int transpositionScore))
+                    return transpositionScore; // Retrieve score if position has been analyzed
 
                 List<Move> possibleMoves = GenerateMoves(Board.Board, isMaximizingPlayer);
-                possibleMoves = OrderMoves(possibleMoves, Board); // Use the updated move ordering logic
+                possibleMoves = OrderMoves(possibleMoves, Board); // Prioritize free captures and strong moves
 
                 int bestScore = isMaximizingPlayer ? int.MinValue : int.MaxValue;
 
-                foreach (Move move in possibleMoves)
+                foreach (var move in possibleMoves)
                 {
-                    Board.SimulateMove(move);
+                    if (IsFreeCapture(move, isMaximizingPlayer))
+                    {
+                        return isMaximizingPlayer ? int.MaxValue : int.MinValue; // Prioritize free captures immediately
+                    }
 
+                    Board.SimulateMove(move); // Simulate the move
                     int eval = AlphaBeta(depth - 1, alpha, beta, !isMaximizingPlayer);
-
-                    Board.UndoSimulatedMove(move);
+                    Board.UndoSimulatedMove(move); // Undo the simulated move
 
                     if (isMaximizingPlayer)
                     {
@@ -794,13 +796,77 @@ namespace Chess
                     }
 
                     if (beta <= alpha)
-                    {
-                        break; // Prune the search
-                    }
+                        break; // Prune branches
                 }
 
+                // Store the result in the transposition table
+                StoreInTranspositionTable(currentHash, depth, bestScore);
                 return bestScore;
             }
+
+
+            private int QuiescenceSearch(int alpha, int beta)
+            {
+                int standPat = EvaluateBoard(Board); // Static evaluation of the current board
+
+                if (standPat >= beta)
+                    return beta; // Beta cutoff
+                if (alpha < standPat)
+                    alpha = standPat; // Update alpha if current evaluation is better
+
+                List<Move> captureMoves = GenerateCaptureMoves(Board.Board, IsWhite);
+                foreach (var move in captureMoves)
+                {
+                    Board.MakeMove(move);
+                    int eval = -QuiescenceSearch(-beta, -alpha); // Recurse with negated scores
+                    UndoMove(move);
+
+                    if (eval >= beta)
+                        return beta; // Beta cutoff
+                    if (eval > alpha)
+                        alpha = eval; // Update alpha
+                }
+
+                return alpha;
+            }
+
+            private ulong ComputeZobristHash(ChessPiece[,] board)
+            {
+                ulong hash = 0;
+                for (int x = 0; x < 8; x++)
+                {
+                    for (int y = 0; y < 8; y++)
+                    {
+                        ChessPiece piece = board[x, y];
+                        if (piece != null)
+                        {
+                            int pieceIndex = GetPieceIndex(piece);
+                            hash ^= zobristTable[y * 8 + x, pieceIndex];
+                        }
+                    }
+                }
+                return hash;
+            }
+
+            private void StoreInTranspositionTable(ulong hash, int depth, int score)
+            {
+                transpositionTable[hash] = (depth, score);
+            }
+
+            private bool TryGetTransposition(ulong hash, int depth, out int score)
+            {
+                if (transpositionTable.TryGetValue(hash, out var entry))
+                {
+                    if (entry.depth >= depth)
+                    {
+                        score = entry.score;
+                        return true;
+                    }
+                }
+                score = 0;
+                return false;
+            }
+
 
             private int EvaluateBoardForDevelopmentAndCentralControl()
             {
@@ -843,7 +909,14 @@ namespace Chess
 
 
 
-
+            private bool IsFreeCapture(Move move, bool isMaximizingPlayer)
+            {
+                bool isFree = false;
+                Board.SimulateMove(move);
+                isFree = !IsPieceThreatened(Board.Board, move.EndX, move.EndY, isMaximizingPlayer);
+                Board.UndoSimulatedMove(move); // Undo the simulated move
+                return isFree;
+            }
 
             private List<Move> OrderMoves(List<Move> moves, ChessBoard board)
             {
@@ -851,12 +924,16 @@ namespace Chess
                 {
                     int value = 0;
 
-                    if (board.Board[move.StartX, move.StartY] is Knight || board.Board[move.StartX, move.StartY] is Bishop)
-                    {
-                        value += 50; // Prioritera att utveckla dessa pjäser
-                    }
+                    // Prioritize free captures
+                    if (IsFreeCapture(move, board.IsWhiteTurn))
+                        value += 10000;
 
-                    value += EvaluateControlOfMiddle(board.Board[move.StartX, move.StartY], move.StartX, move.StartY, board);
+                    if (board.Board[move.EndX, move.EndY] != null)
+                        value += GetPieceValue(board.Board[move.EndX, move.EndY]); // Value for captures
+
+                    if (IsCheck(move, board))
+                        value += 500; // Value for checks
+
                     return value;
                 }).ToList();
             }
@@ -971,31 +1048,7 @@ namespace Chess
                 return move.Piece is Pawn && (move.EndY == 0 || move.EndY == 7);
             }
 
-            private int QuiescenceSearch(int alpha, int beta)
-            {
-                int standPat = EvaluateBoard(Board); // Static evaluation
-
-                if (standPat >= beta)
-                    return beta; // Beta cutoff
-                if (alpha < standPat)
-                    alpha = standPat; // Update alpha if current evaluation is better
-
-                // Generate and process capture moves
-                List<Move> captureMoves = GenerateCaptureMoves(Board.Board, IsWhite);
-                foreach (var move in captureMoves)
-                {
-                    Board.SimulateMove(move);
-                    int eval = -QuiescenceSearch(-beta, -alpha); // Recurse with negated scores
-                    Board.UndoSimulatedMove(move);
-
-                    if (eval >= beta)
-                        return beta; // Beta cutoff
-                    if (eval > alpha)
-                        alpha = eval; // Update alpha
-                }
-
-                return alpha;
-            }
+            
 
             private List<Move> GenerateCaptureMoves(ChessPiece[,] board, bool isWhite)
             {
@@ -1014,75 +1067,43 @@ namespace Chess
 
 
 
-            // Example function to detect a check (you'll need to implement this)
+
             private bool IsCheck(Move move, ChessBoard board)
             {
-                Board.MakeMove(move);
-                bool isCheck = board.IsInCheck(!move.Piece.IsWhite);
-                UndoMove(move);
+                bool isCheck = false;
+                Board.SimulateMove(move);
+                isCheck = board.IsInCheck(!move.Piece.IsWhite);
+                Board.UndoSimulatedMove(move); // Undo the simulated move
                 return isCheck;
             }
+
+
+
+
             private Dictionary<ulong, (int depth, int score)> transpositionTable = new Dictionary<ulong, (int depth, int score)>();
-
-            // Store a position in the transposition table
-            private void StoreInTranspositionTable(ulong hash, int depth, int score)
-            {
-                transpositionTable[hash] = (depth, score);
-            }
-
-            // Try to retrieve a position from the transposition table
-            private bool TryGetTransposition(ulong hash, int depth, out int score)
-            {
-                if (transpositionTable.TryGetValue(hash, out var entry))
-                {
-                    if (entry.depth >= depth)
-                    {
-                        score = entry.score;
-                        return true;
-                    }
-                }
-                score = 0;
-                return false;
-            }
-
-
-
 
             private ulong[,] zobristTable;
             private Random random = new Random();
 
-            // Initialize the Zobrist table
+            
             private void InitializeZobrist()
             {
                 zobristTable = new ulong[64, 12]; // 64 squares, 12 possible pieces (6 types x 2 colors)
 
+                Random random = new Random();
                 for (int square = 0; square < 64; square++)
                 {
                     for (int piece = 0; piece < 12; piece++)
                     {
-                        zobristTable[square, piece] = (ulong)random.Next() << 32 | (ulong)random.Next();
+                        // Generate a random 64-bit number for each piece and square combination
+                        zobristTable[square, piece] = ((ulong)random.Next() << 32) | (ulong)random.Next();
                     }
                 }
             }
 
-            // Compute the Zobrist hash for a given board state
-            private ulong ComputeZobristHash(ChessPiece[,] board)
-            {
-                ulong hash = 0;
-                for (int x = 0; x < 8; x++)
-                {
-                    for (int y = 0; y < 8; y++)
-                    {
-                        ChessPiece piece = board[x, y];
-                        if (piece != null)
-                        {
-                            int pieceIndex = GetPieceIndex(piece); // Get the index for the piece
-                            hash ^= zobristTable[y * 8 + x, pieceIndex]; // XOR with the precomputed value
-                        }
-                    }
-                }
-                return hash;
-            }
+
+
+
 
             private int GetPieceIndex(ChessPiece piece)
             {
@@ -1842,7 +1863,7 @@ namespace Chess
                         ChessPiece piece = board[x, y];
                         if (piece != null && piece.IsWhite == isWhite)
                         {
-                            if (IsPieceThreatened(board, x, y))
+                            if (IsPieceThreatened(board, x, y, IsWhite))
                             {
                                 return true; // A piece is under threat
                             }
@@ -1853,16 +1874,17 @@ namespace Chess
             }
 
 
-            private bool IsPieceThreatened(ChessPiece[,] board, int x, int y)
+            private bool IsPieceThreatened(ChessPiece[,] board, int x, int y, bool isWhite)
             {
-                ChessPiece targetPiece = board[x, y];
-                if (targetPiece == null) return false;
-
-                foreach (var attacker in GetPotentialAttackers(x, y, !targetPiece.IsWhite))
+                for (int i = 0; i < BoardSize; i++)
                 {
-                    if (attacker != null)
+                    for (int j = 0; j < BoardSize; j++)
                     {
-                        return true; // The piece is under attack
+                        ChessPiece attacker = board[i, j];
+                        if (attacker != null && attacker.IsWhite != isWhite && attacker.IsValidMove(board, i, j, x, y))
+                        {
+                            return true;
+                        }
                     }
                 }
                 return false;
