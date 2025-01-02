@@ -497,7 +497,7 @@ namespace Chess
                 score += EvaluateControlOfMiddle(move.Piece, move.EndX, move.EndY, Board);
 
                 // 2. Penalize leaving high-value pieces exposed
-                if (IsPieceThreatened(simulatedBoard, move.EndX, move.EndY,IsWhite))
+                if (IsPieceThreatened(simulatedBoard, move.EndX, move.EndY, IsWhite))
                 {
                     score -= GetPieceValue(move.Piece) * 2; // High penalty for exposing valuable pieces
                 }
@@ -514,8 +514,28 @@ namespace Chess
                 // 5. Add existing evaluations (e.g., material advantage, piece development)
                 score += EvaluateMaterialAdvantage(simulatedBoard);
 
+                // 6. Integrate new evaluation functions
+                // a) Evaluate move safety
+                score += EvaluateMoveSafetyIntegration(move.Piece, move.StartX, move.StartY, move.EndX, move.EndY, simulatedBoard);
+
+                // b) Evaluate development
+                score += EvaluateDevelopment(move.Piece, move.StartX, move.StartY);
+
+                // c) Evaluate center control
+                score += EvaluateCenterControl(move.Piece, move.EndX, move.EndY, Board);
+
+                // d) Evaluate piece development
+                score += EvaluatePieceDevelopment(move.Piece, move.StartX, move.StartY, move.EndX, move.EndY);
+
+                // e) Penalize piece retreat
+                score += PenalizePieceRetreat(move.Piece, move.StartX, move.StartY, move.EndX, move.EndY);
+
+                // f) Evaluate piece safety
+                score += EvaluatePieceSafety(move.Piece, move.EndX, move.EndY, Board);
+
                 return score;
             }
+
             private int EvaluatePressureOnOpponent(ChessPiece[,] board, int x, int y)
             {
                 int pressureScore = 0;
@@ -734,41 +754,49 @@ namespace Chess
             {
                 if (depth == 0)
                 {
-                    return EvaluateBoard(Board); // Pass the ChessBoard instance
+                    return EvaluateBoard(Board); // Utvärdera brädet som helhet
                 }
 
-                // Pass board and turn information
+                // Generera möjliga drag
                 List<Move> possibleMoves = GenerateMoves(Board.Board, isMaximizingPlayer);
 
-                if (isMaximizingPlayer)
+                int bestScore = isMaximizingPlayer ? int.MinValue : int.MaxValue;
+
+                foreach (Move move in possibleMoves)
                 {
-                    int maxEval = int.MinValue;
-                    foreach (Move move in possibleMoves)
+                    Board.SimulateMove(move);
+
+                    // Beräkna dragpoängen med de nya funktionerna
+                    int moveScore = 0;
+                    moveScore += EvaluateMoveSafetyIntegration(move.Piece, move.StartX, move.StartY, move.EndX, move.EndY, Board.Board);
+                    moveScore += EvaluateDevelopment(move.Piece, move.StartX, move.StartY);
+                    moveScore += EvaluateCenterControl(move.Piece, move.EndX, move.EndY, Board);
+                    moveScore += EvaluatePieceDevelopment(move.Piece, move.StartX, move.StartY, move.EndX, move.EndY);
+                    moveScore += PenalizePieceRetreat(move.Piece, move.StartX, move.StartY, move.EndX, move.EndY);
+                    moveScore += EvaluatePieceSafety(move.Piece, move.EndX, move.EndY, Board);
+
+                    // Kombinera dragpoängen med den rekursiva minimax-evalueringen
+                    int eval = moveScore + Minimax(depth - 1, !isMaximizingPlayer);
+                    Board.UndoSimulatedMove(move);
+
+                    // Maximera eller minimera beroende på spelare
+                    if (isMaximizingPlayer)
                     {
-                        Board.SimulateMove(move);
-                        int eval = Minimax(depth - 1, false);
-                        Board.UndoSimulatedMove(move);
-                        maxEval = Math.Max(maxEval, eval);
+                        bestScore = Math.Max(bestScore, eval);
                     }
-                    return maxEval;
-                }
-                else
-                {
-                    int minEval = int.MaxValue;
-                    foreach (Move move in possibleMoves)
+                    else
                     {
-                        Board.SimulateMove(move);
-                        int eval = Minimax(depth - 1, true);
-                        Board.UndoSimulatedMove(move);
-                        minEval = Math.Min(minEval, eval);
+                        bestScore = Math.Min(bestScore, eval);
                     }
-                    return minEval;
                 }
+
+                return bestScore;
             }
 
 
 
-            // Optimizing AI move calculation by prioritizing free captures and assuming opponent will do the same.
+
+
 
             private int AlphaBeta(int depth, int alpha, int beta, bool isMaximizingPlayer)
             {
@@ -792,7 +820,17 @@ namespace Chess
                     }
 
                     Board.SimulateMove(move); // Simulate the move
-                    int eval = AlphaBeta(depth - 1, alpha, beta, !isMaximizingPlayer);
+
+                    // Evaluate the move using additional evaluation methods
+                    int moveScore = 0;
+                    moveScore += EvaluateMoveSafetyIntegration(move.Piece, move.StartX, move.StartY, move.EndX, move.EndY, Board.Board);
+                    moveScore += EvaluateDevelopment(move.Piece, move.StartX, move.StartY);
+                    moveScore += EvaluateCenterControl(move.Piece, move.EndX, move.EndY, Board);
+                    moveScore += EvaluatePieceDevelopment(move.Piece, move.StartX, move.StartY, move.EndX, move.EndY);
+                    moveScore += PenalizePieceRetreat(move.Piece, move.StartX, move.StartY, move.EndX, move.EndY);
+                    moveScore += EvaluatePieceSafety(move.Piece, move.EndX, move.EndY, Board);
+
+                    int eval = moveScore + AlphaBeta(depth - 1, alpha, beta, !isMaximizingPlayer);
                     Board.UndoSimulatedMove(move); // Undo the simulated move
 
                     if (isMaximizingPlayer)
@@ -814,6 +852,13 @@ namespace Chess
                 StoreInTranspositionTable(currentHash, depth, bestScore);
                 return bestScore;
             }
+
+
+
+
+
+
+
             public List<(int startX, int startY, int endX, int endY)> GetAiMoves()
             {
                 List<(int startX, int startY, int endX, int endY)> availableMoves = new List<(int, int, int, int)>();
