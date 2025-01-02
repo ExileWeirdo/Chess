@@ -178,7 +178,7 @@ namespace Chess
         }
 
 
-        private List<(int startX, int startY, int endX, int endY)> GetAvailableMovesForAI()
+        public List<(int startX, int startY, int endX, int endY)> GetAvailableMovesForAI()
         {
             List<(int startX, int startY, int endX, int endY)> availableMoves = new List<(int, int, int, int)>();
 
@@ -345,43 +345,54 @@ namespace Chess
 
         private void MakeHardAIMove()
         {
-            ChessAI ai = new ChessAI(false, chessBoard, false); // Assuming AI plays black
-            Move aiMove = ai.FindBestMove(4);
-            if (aiMove != null)
+            // Skapa en instans av ChessAI
+            ChessAI ai = new ChessAI(false, chessBoard, false); // AI spelar svart här
+
+            // Försök hitta ett schackmattsdrag via AI-instansen
+            var checkmateMove = ai.FindCheckmateMoveForAI();
+            if (checkmateMove.HasValue)
             {
-                Console.WriteLine("Move was Found");
+                // Utför schackmattsdraget
+                chessBoard.MovePiece(checkmateMove.Value.startX, checkmateMove.Value.startY, checkmateMove.Value.endX, checkmateMove.Value.endY);
+                UpdateBoardUI();
+                MessageBox.Show("Schackmatt! AI vinner!");
+                DisableChessBoard(); // Inaktivera brädet efter schackmattsdrag
+                return;
+            }
 
-                // Perform the actual move'
-                chessBoard.MakeMove(aiMove);
+            // Om inget schackmattsdrag hittades, hitta det bästa draget med hjälp av AI
+            Move bestMove = ai.FindBestMove(4); // Använder djupet 4 för bästa draget
+            if (bestMove != null)
+            {
+                chessBoard.MakeMove(bestMove); // Utför bästa draget
+                UpdateBoardUI();
 
-                // Check if the move results in check or checkmate
+                // Kontrollera om draget resulterar i schack eller schackmatt
                 bool isCheck = chessBoard.IsInCheck(chessBoard.IsWhiteTurn);
                 bool isCheckmate = chessBoard.IsCheckmate(chessBoard.IsWhiteTurn);
 
-                if (isCheck)
+                if (isCheckmate)
                 {
-                    if (isCheckmate)
-                    {
-                        MessageBox.Show($"{(!chessBoard.IsWhiteTurn ? "White" : "Black")} wins by checkmate!");
-                        canMoveAI = false;
-                        DisableChessBoard(); // Disable the board after checkmate
-                        return;
-                    }
-                    else
-                    {
-                        MessageBox.Show($"{(!chessBoard.IsWhiteTurn ? "Black" : "White")} is in check!");
-                    }
+                    MessageBox.Show($"{(!chessBoard.IsWhiteTurn ? "White" : "Black")} wins by checkmate!");
+                    DisableChessBoard();
+                    return;
                 }
-
-
-                // Update the UI after the AI's move
-                UpdateBoardUI();
-            } else
+                else if (isCheck)
+                {
+                    MessageBox.Show($"{(!chessBoard.IsWhiteTurn ? "Black" : "White")} is in check!");
+                }
+            }
+            else
             {
-                Console.WriteLine("Move Not Found");
+                MessageBox.Show("Inga möjliga drag kvar! Oavgjort.");
+                DisableChessBoard();
             }
         }
-        
+
+
+
+
+
 
 
 
@@ -803,6 +814,90 @@ namespace Chess
                 StoreInTranspositionTable(currentHash, depth, bestScore);
                 return bestScore;
             }
+            public List<(int startX, int startY, int endX, int endY)> GetAiMoves()
+            {
+                List<(int startX, int startY, int endX, int endY)> availableMoves = new List<(int, int, int, int)>();
+
+                for (int x = 0; x < BoardSize; x++)
+                {
+                    for (int y = 0; y < BoardSize; y++)
+                    {
+                        ChessPiece piece = Board.Board[x, y];
+                        if (piece != null && piece.IsWhite == IsWhite) // Endast AI:s egna pjäser
+                        {
+                            for (int endX = 0; endX < BoardSize; endX++)
+                            {
+                                for (int endY = 0; endY < BoardSize; endY++)
+                                {
+                                    if (piece.IsValidMove(Board.Board, x, y, endX, endY) &&
+                                        !IsInCheckAfterMove(Board.Board, x, y, endX, endY, IsWhite))
+                                    {
+                                        availableMoves.Add((x, y, endX, endY));
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+
+                return availableMoves;
+            }
+
+            private bool IsCheckmateAfterMove(ChessPiece[,] board, int startX, int startY, int endX, int endY, bool isWhite)
+            {
+                // Klona brädet för att simulera draget
+                ChessPiece[,] simulatedBoard = CloneBoard(board);
+                ChessPiece movingPiece = simulatedBoard[startX, startY];
+                simulatedBoard[endX, endY] = movingPiece;
+                simulatedBoard[startX, startY] = null;
+
+                // Kontrollera om motståndarens kung är i schackmatt
+                bool isCheckmate = !HasLegalMoves(simulatedBoard, !isWhite) &&
+                                   IsKingInCheck(simulatedBoard, !isWhite);
+
+                return isCheckmate;
+            }
+            public (int startX, int startY, int endX, int endY)? FindCheckmateMoveForAI()
+            {
+                List<(int startX, int startY, int endX, int endY)> availableMoves = GetAiMoves();
+
+                foreach (var move in availableMoves)
+                {
+                    if (IsCheckmateAfterMove(Board.Board, move.startX, move.startY, move.endX, move.endY, false))
+                    {
+                        return move; // Returnera schackmattsdraget
+                    }
+                }
+
+                return null; // Inga schackmattsdrag hittades
+            }
+            private bool HasLegalMoves(ChessPiece[,] board, bool isWhite)
+            {
+                for (int startX = 0; startX < BoardSize; startX++)
+                {
+                    for (int startY = 0; startY < BoardSize; startY++)
+                    {
+                        ChessPiece piece = board[startX, startY];
+                        if (piece != null && piece.IsWhite == isWhite)
+                        {
+                            // För varje pjäs, hitta alla giltiga drag
+                            for (int endX = 0; endX < BoardSize; endX++)
+                            {
+                                for (int endY = 0; endY < BoardSize; endY++)
+                                {
+                                    if (piece.IsValidMove(board, startX, startY, endX, endY) &&
+                                        !IsInCheckAfterMove(board, startX, startY, endX, endY, isWhite))
+                                    {
+                                        return true; // Om ett giltigt drag finns, returnera true
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+                return false; // Om inga giltiga drag finns, returnera false
+            }
+
 
 
             private int QuiescenceSearch(int alpha, int beta)
