@@ -246,7 +246,6 @@ namespace Chess
                 availableMoves = GetAvailableMovesForAI();
             }
 
-
             // Randomly select a move from available moves
             Random rand = new Random();
             var move = availableMoves[rand.Next(availableMoves.Count)];
@@ -254,17 +253,14 @@ namespace Chess
             // Execute the selected move
             chessBoard.MovePiece(move.startX, move.startY, move.endX, move.endY);
 
-
+            // Kontrollera om promotion behövs
+            if (chessBoard.Board[move.endX, move.endY] is Pawn && (move.endY == 0 || move.endY == 7))
+            {
+                chessBoard.PromotePawnForAI(move.endX, move.endY);
+            }
 
             UpdateBoardUI();
-
-
-
         }
-
-
-
-
 
         private void MakeMediumAIMove()
         {
@@ -277,14 +273,14 @@ namespace Chess
 
             // Define the value of each chess piece
             Dictionary<Type, int> pieceValues = new Dictionary<Type, int>
-            {
-                { typeof(Pawn), 1 },
-                { typeof(Knight), 3 },
-                { typeof(Bishop), 3 },
-                { typeof(Rook), 5 },
-                { typeof(Queen), 9 },
-                { typeof(King), 100 } // King's value is high to prioritize checkmate
-            };
+    {
+        { typeof(Pawn), 1 },
+        { typeof(Knight), 3 },
+        { typeof(Bishop), 3 },
+        { typeof(Rook), 5 },
+        { typeof(Queen), 9 },
+        { typeof(King), 100 } // King's value is high to prioritize checkmate
+    };
 
             bool isInCheck = chessBoard.IsInCheck(false); // Check if AI's king is in check (assuming AI is black)
 
@@ -297,6 +293,13 @@ namespace Chess
                     Random rand = new Random();
                     var defensiveMove = defendMoves[rand.Next(defendMoves.Count)];
                     chessBoard.MovePiece(defensiveMove.startX, defensiveMove.startY, defensiveMove.endX, defensiveMove.endY);
+
+                    // Kontrollera om promotion behövs
+                    if (chessBoard.Board[defensiveMove.endX, defensiveMove.endY] is Pawn && (defensiveMove.endY == 0 || defensiveMove.endY == 7))
+                    {
+                        chessBoard.PromotePawnForAI(defensiveMove.endX, defensiveMove.endY);
+                    }
+
                     UpdateBoardUI();
                     return;
                 }
@@ -329,9 +332,16 @@ namespace Chess
             // Execute the best move found
             chessBoard.MovePiece(bestMove.startX, bestMove.startY, bestMove.endX, bestMove.endY);
 
+            // Kontrollera om promotion behövs
+            if (chessBoard.Board[bestMove.endX, bestMove.endY] is Pawn && (bestMove.endY == 0 || bestMove.endY == 7))
+            {
+                chessBoard.PromotePawnForAI(bestMove.endX, bestMove.endY);
+            }
+
             // Update the board UI
             UpdateBoardUI();
         }
+
 
 
 
