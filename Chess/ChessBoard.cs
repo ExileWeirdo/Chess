@@ -453,6 +453,14 @@ namespace Chess
             promotionForm.Controls.Add(confirmButton);
             promotionForm.ShowDialog();
         }
+        public void PromotePawnForAI(int x, int y)
+        {
+            if (Board[x, y] is Pawn pawn)
+            {
+                Board[x, y] = new Queen(pawn.IsWhite); // Byt ut bonden mot en drottning
+            }
+        }
+
 
         public bool CanCastle(bool isWhite, bool kingside)
         {

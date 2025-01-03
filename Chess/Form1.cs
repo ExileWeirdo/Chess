@@ -354,6 +354,13 @@ namespace Chess
             {
                 // Utför schackmattsdraget
                 chessBoard.MovePiece(checkmateMove.Value.startX, checkmateMove.Value.startY, checkmateMove.Value.endX, checkmateMove.Value.endY);
+
+                // Kontrollera om promotion behövs
+                if (chessBoard.Board[checkmateMove.Value.endX, checkmateMove.Value.endY] is Pawn && (checkmateMove.Value.endY == 0 || checkmateMove.Value.endY == 7))
+                {
+                    chessBoard.PromotePawnForAI(checkmateMove.Value.endX, checkmateMove.Value.endY);
+                }
+
                 UpdateBoardUI();
                 MessageBox.Show("Schackmatt! AI vinner!");
                 DisableChessBoard(); // Inaktivera brädet efter schackmattsdrag
@@ -365,6 +372,13 @@ namespace Chess
             if (bestMove != null)
             {
                 chessBoard.MakeMove(bestMove); // Utför bästa draget
+
+                // Kontrollera om promotion behövs
+                if (chessBoard.Board[bestMove.EndX, bestMove.EndY] is Pawn && (bestMove.EndY == 0 || bestMove.EndY == 7))
+                {
+                    chessBoard.PromotePawnForAI(bestMove.EndX, bestMove.EndY);
+                }
+
                 UpdateBoardUI();
 
                 // Kontrollera om draget resulterar i schack eller schackmatt
@@ -388,6 +402,7 @@ namespace Chess
                 DisableChessBoard();
             }
         }
+
 
 
 
