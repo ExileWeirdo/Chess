@@ -378,7 +378,7 @@ namespace Chess
             }
 
             // Om inget schackmattsdrag hittades, hitta det bästa draget med hjälp av AI
-            Move bestMove = ai.FindBestMove(4); // Använder djupet 4 för bästa draget
+            Move bestMove = ai.FindBestMove(5); // Använder djupet 5 för bästa draget
             if (bestMove != null)
             {
                 chessBoard.MakeMove(bestMove); // Utför bästa draget
@@ -476,36 +476,49 @@ namespace Chess
                 Move bestMove = null;
                 int bestScore = int.MinValue;
 
-                // Generate all possible moves
                 List<Move> allMoves = GenerateMoves(Board.Board, IsWhite);
+                Console.WriteLine($"Generated {allMoves.Count} moves.");
 
                 foreach (Move move in allMoves)
                 {
-                    // Simulate the move
-                    Board.MakeMove(move);
+                    Console.WriteLine($"Trying move: {move.StartX},{move.StartY} -> {move.EndX},{move.EndY}");
 
-                    // Use EvaluateMove to assess the move
+                    Board.SimulateMove(move);
 
-                    int score = EvaluateMove(move);
-                    // If depth allows, refine score using AlphaBeta for deeper analysis
+                    // Utvärdera tidiga drag
+                    int score = IsEarlyGame() ? EvaluateEarlyGameMove(move) : 0;
+                    int earlyS = EvaluateEarlyGameMove(move);
+                    Console.WriteLine($"EvaluateEarlyGameMove score: {earlyS} overall score {score}");
+
+                    // Lägg till djupbaserad analys
                     if (depth > 1)
                     {
                         score += AlphaBeta(depth - 1, int.MinValue, int.MaxValue, false);
                     }
 
-                    // Undo the move
-                    UndoMove(move);
+                    Board.UndoSimulatedMove(move);
 
-                    // Update the best move if the score is higher
+                    Console.WriteLine($"Score for move: {score}");
+
                     if (score > bestScore)
                     {
                         bestScore = score;
                         bestMove = move;
+                        Console.WriteLine($"New best move: {move.StartX},{move.StartY} -> {move.EndX},{move.EndY}, Score: {bestScore}");
                     }
+                }
+
+                if (bestMove == null)
+                {
+                    Console.WriteLine("No valid moves found!");
                 }
 
                 return bestMove;
             }
+
+
+
+
 
 
 
@@ -637,23 +650,77 @@ namespace Chess
             {
                 int score = 0;
 
-                // Belöna utveckling av springare och löpare
+                // Debug: Logga startvärden
+                Console.WriteLine($"Evaluating move: {move.StartX},{move.StartY} -> {move.EndX},{move.EndY}");
+
+                if (move.Piece is Pawn)
+                {
+                    // Belöna rörelser som närmar sig mitten, max 10 poäng
+                    int centerReward = Math.Min(RewardMoveTowardsCenter(move.EndX, move.EndY), 10);
+                    score += centerReward;
+                    Console.WriteLine($"Pawn center reward: {centerReward}, Total score: {score}");
+
+                    // Extra poäng för centrumrutor, viktat till max 5 poäng
+                    if ((move.EndX == 3 || move.EndX == 4) && (move.EndY == 3 || move.EndY == 4))
+                    {
+                        score += 5;
+                        Console.WriteLine($"Pawn directly on center: +5, Total score: {score}");
+                    }
+                }
+
                 if (move.Piece is Knight || move.Piece is Bishop)
                 {
-                    score += 50;
+                    // Belöna centrala rörelser, max 10 poäng
+                    int centerReward = Math.Min(RewardMoveTowardsCenter(move.EndX, move.EndY), 10);
+                    score += centerReward;
+                    Console.WriteLine($"Knight/Bishop center reward: {centerReward}, Total score: {score}");
+
+                    // Straffa drag som ignorerar centrum, max 10 poäng i straff
+                    if ((move.EndX < 2 || move.EndX > 5) || (move.EndY < 2 || move.EndY > 5))
+                    {
+                        score -= 10;
+                        Console.WriteLine($"Knight/Bishop not helping center: -10, Total score: {score}");
+                    }
                 }
 
-                // Belöna kontroll av centrum
-                score += EvaluateControlOfMiddle(move.Piece, move.StartX, move.StartY, Board);
-
-                // Straffa kungsdrag
-                if (move.Piece is King)
-                {
-                    score -= 100;
-                }
-
+                // Debug: Begränsa och logga slutvärden
+                Console.WriteLine($"Final score for move: {score}");
                 return score;
             }
+
+
+
+            private int RewardMoveTowardsCenter(int x, int y)
+            {
+                // Kontrollera att positionen är inom brädet
+                if (x < 0 || x >= 8 || y < 0 || y >= 8)
+                {
+                    Console.WriteLine($"Invalid position: ({x},{y}), returning 0");
+                    return 0;
+                }
+
+                // Centrala rutor och deras vikter
+                int[,] centerWeights = {
+        { 0, 1, 2, 3, 3, 2, 1, 0 },
+        { 1, 2, 3, 4, 4, 3, 2, 1 },
+        { 2, 3, 4, 5, 5, 4, 3, 2 },
+        { 3, 4, 5, 6, 6, 5, 4, 3 },
+        { 3, 4, 5, 6, 6, 5, 4, 3 },
+        { 2, 3, 4, 5, 5, 4, 3, 2 },
+        { 1, 2, 3, 4, 4, 3, 2, 1 },
+        { 0, 1, 2, 3, 3, 2, 1, 0 }
+    };
+
+                // Hämta vikten för positionen
+                int reward = centerWeights[x, y];
+                Console.WriteLine($"Reward for position ({x},{y}): {reward}");
+                return reward;
+            }
+
+
+
+
+
 
 
 
@@ -825,23 +892,38 @@ namespace Chess
 
             private int AlphaBeta(int depth, int alpha, int beta, bool isMaximizingPlayer)
             {
+                Console.WriteLine($"AlphaBeta called with depth: {depth}, alpha: {alpha}, beta: {beta}, maximizing: {isMaximizingPlayer}");
+
                 if (depth == 0)
-                    return QuiescenceSearch(alpha, beta); // Use Quiescence Search for better static evaluation
+                {
+                    int quiescenceScore = QuiescenceSearch(alpha, beta);
+                    Console.WriteLine($"Depth 0 reached, Quiescence score: {quiescenceScore}");
+                    return quiescenceScore;
+                }
 
                 ulong currentHash = ComputeZobristHash(Board.Board);
                 if (TryGetTransposition(currentHash, depth, out int transpositionScore))
-                    return transpositionScore; // Retrieve score if position has been analyzed
+                {
+                    Console.WriteLine($"Transposition table hit for hash: {currentHash}, score: {transpositionScore}");
+                    return transpositionScore;
+                }
 
                 List<Move> possibleMoves = GenerateMoves(Board.Board, isMaximizingPlayer);
                 possibleMoves = OrderMoves(possibleMoves, Board); // Prioritize free captures and strong moves
+
+                Console.WriteLine($"Generated {possibleMoves.Count} possible moves at depth {depth}");
 
                 int bestScore = isMaximizingPlayer ? int.MinValue : int.MaxValue;
 
                 foreach (var move in possibleMoves)
                 {
+                    Console.WriteLine($"Evaluating move: {move.StartX},{move.StartY} -> {move.EndX},{move.EndY}");
+
                     if (IsFreeCapture(move, isMaximizingPlayer))
                     {
-                        return isMaximizingPlayer ? int.MaxValue : int.MinValue; // Prioritize free captures immediately
+                        int freeCaptureScore = isMaximizingPlayer ? 10000 : -10000;
+                        Console.WriteLine($"Free capture detected for move: {move.StartX},{move.StartY} -> {move.EndX},{move.EndY}, Free capture score: {freeCaptureScore}");
+                        return freeCaptureScore;
                     }
 
                     Board.SimulateMove(move); // Simulate the move
@@ -855,28 +937,41 @@ namespace Chess
                     moveScore += PenalizePieceRetreat(move.Piece, move.StartX, move.StartY, move.EndX, move.EndY);
                     moveScore += EvaluatePieceSafety(move.Piece, move.EndX, move.EndY, Board);
 
+                    Console.WriteLine($"Move score before recursion: {moveScore}");
+
                     int eval = moveScore + AlphaBeta(depth - 1, alpha, beta, !isMaximizingPlayer);
+
                     Board.UndoSimulatedMove(move); // Undo the simulated move
+
+                    Console.WriteLine($"Move: {move.StartX},{move.StartY} -> {move.EndX},{move.EndY}, Eval: {eval}, BestScore: {bestScore}");
 
                     if (isMaximizingPlayer)
                     {
                         bestScore = Math.Max(bestScore, eval);
                         alpha = Math.Max(alpha, eval);
+                        Console.WriteLine($"Updated alpha: {alpha}");
                     }
                     else
                     {
                         bestScore = Math.Min(bestScore, eval);
                         beta = Math.Min(beta, eval);
+                        Console.WriteLine($"Updated beta: {beta}");
                     }
 
                     if (beta <= alpha)
+                    {
+                        Console.WriteLine($"Pruning branch at move: {move.StartX},{move.StartY} -> {move.EndX},{move.EndY}, beta: {beta}, alpha: {alpha}");
                         break; // Prune branches
+                    }
                 }
 
                 // Store the result in the transposition table
                 StoreInTranspositionTable(currentHash, depth, bestScore);
+                Console.WriteLine($"AlphaBeta returning best score: {bestScore} at depth: {depth}");
                 return bestScore;
             }
+
+
 
 
 
