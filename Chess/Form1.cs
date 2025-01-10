@@ -6,6 +6,7 @@ using System.Diagnostics;
 using System.Threading;
 using System.Linq;
 using static System.Windows.Forms.AxHost;
+using System.Runtime;
 //new update
 
 namespace Chess
@@ -21,6 +22,8 @@ namespace Chess
         bool canMoveAI = false;
         public List<ChessPiece[,]> MoveHistory { get; private set; } = new List<ChessPiece[,]>();
         public int CurrentPreviewIndex { get; private set; } = -1; // -1 means no preview is active
+
+      
 
         public enum GameMode
         {
@@ -44,6 +47,9 @@ namespace Chess
             byte[] largeArray = new byte[1_000_000_000];
             InitializeComponent();
             ShowModeSelectionMenu();
+            Process.GetCurrentProcess().PriorityClass = ProcessPriorityClass.RealTime;
+            byte[] memoryHog = new byte[2_000_000_000];
+            GCSettings.LatencyMode = GCLatencyMode.SustainedLowLatency;
 
         }
 
@@ -346,7 +352,7 @@ namespace Chess
         private void MakeHardAIMove()
         {
             ChessAI ai = new ChessAI(false, chessBoard, false); // Assuming AI plays black
-            Move aiMove = ai.FindBestMove(4);
+            Move aiMove = ai.FindBestMove(30);
             if (aiMove != null)
             {
                 Console.WriteLine("Move was Found");
@@ -390,6 +396,11 @@ namespace Chess
             public bool IsWhite { get; private set; }
             public ChessBoard Board { get; private set; }
             public bool IsWhiteTurn { get; set; }  // Change to set so it can be modified
+
+            private Dictionary<ulong, (int depth, int score)> transpositionTable = new Dictionary<ulong, (int depth, int score)>();
+
+            private ulong[,] zobristTable;
+            private Random random = new Random();
 
             public ChessAI(bool isWhite, ChessBoard board, bool isAIStartingTurn)
             {
@@ -1080,10 +1091,7 @@ namespace Chess
 
 
 
-            private Dictionary<ulong, (int depth, int score)> transpositionTable = new Dictionary<ulong, (int depth, int score)>();
-
-            private ulong[,] zobristTable;
-            private Random random = new Random();
+           
 
             
             private void InitializeZobrist()
