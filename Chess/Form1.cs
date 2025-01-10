@@ -184,7 +184,7 @@ namespace Chess
         }
 
 
-        private List<(int startX, int startY, int endX, int endY)> GetAvailableMovesForAI()
+        public List<(int startX, int startY, int endX, int endY)> GetAvailableMovesForAI()
         {
             List<(int startX, int startY, int endX, int endY)> availableMoves = new List<(int, int, int, int)>();
 
@@ -252,7 +252,6 @@ namespace Chess
                 availableMoves = GetAvailableMovesForAI();
             }
 
-
             // Randomly select a move from available moves
             Random rand = new Random();
             var move = availableMoves[rand.Next(availableMoves.Count)];
@@ -260,17 +259,14 @@ namespace Chess
             // Execute the selected move
             chessBoard.MovePiece(move.startX, move.startY, move.endX, move.endY);
 
-
+            // Kontrollera om promotion behövs
+            if (chessBoard.Board[move.endX, move.endY] is Pawn && (move.endY == 0 || move.endY == 7))
+            {
+                chessBoard.PromotePawnForAI(move.endX, move.endY);
+            }
 
             UpdateBoardUI();
-
-
-
         }
-
-
-
-
 
         private void MakeMediumAIMove()
         {
@@ -283,14 +279,14 @@ namespace Chess
 
             // Define the value of each chess piece
             Dictionary<Type, int> pieceValues = new Dictionary<Type, int>
-            {
-                { typeof(Pawn), 1 },
-                { typeof(Knight), 3 },
-                { typeof(Bishop), 3 },
-                { typeof(Rook), 5 },
-                { typeof(Queen), 9 },
-                { typeof(King), 100 } // King's value is high to prioritize checkmate
-            };
+    {
+        { typeof(Pawn), 1 },
+        { typeof(Knight), 3 },
+        { typeof(Bishop), 3 },
+        { typeof(Rook), 5 },
+        { typeof(Queen), 9 },
+        { typeof(King), 100 } // King's value is high to prioritize checkmate
+    };
 
             bool isInCheck = chessBoard.IsInCheck(false); // Check if AI's king is in check (assuming AI is black)
 
@@ -303,6 +299,13 @@ namespace Chess
                     Random rand = new Random();
                     var defensiveMove = defendMoves[rand.Next(defendMoves.Count)];
                     chessBoard.MovePiece(defensiveMove.startX, defensiveMove.startY, defensiveMove.endX, defensiveMove.endY);
+
+                    // Kontrollera om promotion behövs
+                    if (chessBoard.Board[defensiveMove.endX, defensiveMove.endY] is Pawn && (defensiveMove.endY == 0 || defensiveMove.endY == 7))
+                    {
+                        chessBoard.PromotePawnForAI(defensiveMove.endX, defensiveMove.endY);
+                    }
+
                     UpdateBoardUI();
                     return;
                 }
@@ -335,6 +338,12 @@ namespace Chess
             // Execute the best move found
             chessBoard.MovePiece(bestMove.startX, bestMove.startY, bestMove.endX, bestMove.endY);
 
+            // Kontrollera om promotion behövs
+            if (chessBoard.Board[bestMove.endX, bestMove.endY] is Pawn && (bestMove.endY == 0 || bestMove.endY == 7))
+            {
+                chessBoard.PromotePawnForAI(bestMove.endX, bestMove.endY);
+            }
+
             // Update the board UI
             UpdateBoardUI();
         }
@@ -349,45 +358,72 @@ namespace Chess
 
 
 
+
         private void MakeHardAIMove()
         {
-            ChessAI ai = new ChessAI(false, chessBoard, false); // Assuming AI plays black
-            Move aiMove = ai.FindBestMove(30);
-            if (aiMove != null)
+            // Skapa en instans av ChessAI
+            ChessAI ai = new ChessAI(false, chessBoard, false); // AI spelar svart här
+
+            // Försök hitta ett schackmattsdrag via AI-instansen
+            var checkmateMove = ai.FindCheckmateMoveForAI();
+            if (checkmateMove.HasValue)
             {
-                Console.WriteLine("Move was Found");
+                // Utför schackmattsdraget
+                chessBoard.MovePiece(checkmateMove.Value.startX, checkmateMove.Value.startY, checkmateMove.Value.endX, checkmateMove.Value.endY);
 
-                // Perform the actual move'
-                chessBoard.MakeMove(aiMove);
+                // Kontrollera om promotion behövs
+                if (chessBoard.Board[checkmateMove.Value.endX, checkmateMove.Value.endY] is Pawn && (checkmateMove.Value.endY == 0 || checkmateMove.Value.endY == 7))
+                {
+                    chessBoard.PromotePawnForAI(checkmateMove.Value.endX, checkmateMove.Value.endY);
+                }
 
-                // Check if the move results in check or checkmate
+                UpdateBoardUI();
+                MessageBox.Show("Schackmatt! AI vinner!");
+                DisableChessBoard(); // Inaktivera brädet efter schackmattsdrag
+                return;
+            }
+
+            // Om inget schackmattsdrag hittades, hitta det bästa draget med hjälp av AI
+            Move bestMove = ai.FindBestMove(5); // Använder djupet 5 för bästa draget
+            if (bestMove != null)
+            {
+                chessBoard.MakeMove(bestMove); // Utför bästa draget
+
+                // Kontrollera om promotion behövs
+                if (chessBoard.Board[bestMove.EndX, bestMove.EndY] is Pawn && (bestMove.EndY == 0 || bestMove.EndY == 7))
+                {
+                    chessBoard.PromotePawnForAI(bestMove.EndX, bestMove.EndY);
+                }
+
+                UpdateBoardUI();
+
+                // Kontrollera om draget resulterar i schack eller schackmatt
                 bool isCheck = chessBoard.IsInCheck(chessBoard.IsWhiteTurn);
                 bool isCheckmate = chessBoard.IsCheckmate(chessBoard.IsWhiteTurn);
 
-                if (isCheck)
+                if (isCheckmate)
                 {
-                    if (isCheckmate)
-                    {
-                        MessageBox.Show($"{(!chessBoard.IsWhiteTurn ? "White" : "Black")} wins by checkmate!");
-                        canMoveAI = false;
-                        DisableChessBoard(); // Disable the board after checkmate
-                        return;
-                    }
-                    else
-                    {
-                        MessageBox.Show($"{(!chessBoard.IsWhiteTurn ? "Black" : "White")} is in check!");
-                    }
+                    MessageBox.Show($"{(!chessBoard.IsWhiteTurn ? "White" : "Black")} wins by checkmate!");
+                    DisableChessBoard();
+                    return;
                 }
-
-
-                // Update the UI after the AI's move
-                UpdateBoardUI();
-            } else
+                else if (isCheck)
+                {
+                    MessageBox.Show($"{(!chessBoard.IsWhiteTurn ? "Black" : "White")} is in check!");
+                }
+            }
+            else
             {
-                Console.WriteLine("Move Not Found");
+                MessageBox.Show("Inga möjliga drag kvar! Oavgjort.");
+                DisableChessBoard();
             }
         }
-        
+
+
+
+
+
+
 
 
 
@@ -451,36 +487,49 @@ namespace Chess
                 Move bestMove = null;
                 int bestScore = int.MinValue;
 
-                // Generate all possible moves
                 List<Move> allMoves = GenerateMoves(Board.Board, IsWhite);
+                Console.WriteLine($"Generated {allMoves.Count} moves.");
 
                 foreach (Move move in allMoves)
                 {
-                    // Simulate the move
-                    Board.MakeMove(move);
+                    Console.WriteLine($"Trying move: {move.StartX},{move.StartY} -> {move.EndX},{move.EndY}");
 
-                    // Use EvaluateMove to assess the move
+                    Board.SimulateMove(move);
 
-                    int score = EvaluateMove(move);
-                    // If depth allows, refine score using AlphaBeta for deeper analysis
+                    // Utvärdera tidiga drag
+                    int score = IsEarlyGame() ? EvaluateEarlyGameMove(move) : 0;
+                    int earlyS = EvaluateEarlyGameMove(move);
+                    Console.WriteLine($"EvaluateEarlyGameMove score: {earlyS} overall score {score}");
+
+                    // Lägg till djupbaserad analys
                     if (depth > 1)
                     {
                         score += AlphaBeta(depth - 1, int.MinValue, int.MaxValue, false);
                     }
 
-                    // Undo the move
-                    UndoMove(move);
+                    Board.UndoSimulatedMove(move);
 
-                    // Update the best move if the score is higher
+                    Console.WriteLine($"Score for move: {score}");
+
                     if (score > bestScore)
                     {
                         bestScore = score;
                         bestMove = move;
+                        Console.WriteLine($"New best move: {move.StartX},{move.StartY} -> {move.EndX},{move.EndY}, Score: {bestScore}");
                     }
+                }
+
+                if (bestMove == null)
+                {
+                    Console.WriteLine("No valid moves found!");
                 }
 
                 return bestMove;
             }
+
+
+
+
 
 
 
@@ -497,7 +546,7 @@ namespace Chess
                 score += EvaluateControlOfMiddle(move.Piece, move.EndX, move.EndY, Board);
 
                 // 2. Penalize leaving high-value pieces exposed
-                if (IsPieceThreatened(simulatedBoard, move.EndX, move.EndY,IsWhite))
+                if (IsPieceThreatened(simulatedBoard, move.EndX, move.EndY, IsWhite))
                 {
                     score -= GetPieceValue(move.Piece) * 2; // High penalty for exposing valuable pieces
                 }
@@ -514,8 +563,28 @@ namespace Chess
                 // 5. Add existing evaluations (e.g., material advantage, piece development)
                 score += EvaluateMaterialAdvantage(simulatedBoard);
 
+                // 6. Integrate new evaluation functions
+                // a) Evaluate move safety
+                score += EvaluateMoveSafetyIntegration(move.Piece, move.StartX, move.StartY, move.EndX, move.EndY, simulatedBoard);
+
+                // b) Evaluate development
+                score += EvaluateDevelopment(move.Piece, move.StartX, move.StartY);
+
+                // c) Evaluate center control
+                score += EvaluateCenterControl(move.Piece, move.EndX, move.EndY, Board);
+
+                // d) Evaluate piece development
+                score += EvaluatePieceDevelopment(move.Piece, move.StartX, move.StartY, move.EndX, move.EndY);
+
+                // e) Penalize piece retreat
+                score += PenalizePieceRetreat(move.Piece, move.StartX, move.StartY, move.EndX, move.EndY);
+
+                // f) Evaluate piece safety
+                score += EvaluatePieceSafety(move.Piece, move.EndX, move.EndY, Board);
+
                 return score;
             }
+
             private int EvaluatePressureOnOpponent(ChessPiece[,] board, int x, int y)
             {
                 int pressureScore = 0;
@@ -592,23 +661,77 @@ namespace Chess
             {
                 int score = 0;
 
-                // Belöna utveckling av springare och löpare
+                // Debug: Logga startvärden
+                Console.WriteLine($"Evaluating move: {move.StartX},{move.StartY} -> {move.EndX},{move.EndY}");
+
+                if (move.Piece is Pawn)
+                {
+                    // Belöna rörelser som närmar sig mitten, max 10 poäng
+                    int centerReward = Math.Min(RewardMoveTowardsCenter(move.EndX, move.EndY), 10);
+                    score += centerReward;
+                    Console.WriteLine($"Pawn center reward: {centerReward}, Total score: {score}");
+
+                    // Extra poäng för centrumrutor, viktat till max 5 poäng
+                    if ((move.EndX == 3 || move.EndX == 4) && (move.EndY == 3 || move.EndY == 4))
+                    {
+                        score += 5;
+                        Console.WriteLine($"Pawn directly on center: +5, Total score: {score}");
+                    }
+                }
+
                 if (move.Piece is Knight || move.Piece is Bishop)
                 {
-                    score += 50;
+                    // Belöna centrala rörelser, max 10 poäng
+                    int centerReward = Math.Min(RewardMoveTowardsCenter(move.EndX, move.EndY), 10);
+                    score += centerReward;
+                    Console.WriteLine($"Knight/Bishop center reward: {centerReward}, Total score: {score}");
+
+                    // Straffa drag som ignorerar centrum, max 10 poäng i straff
+                    if ((move.EndX < 2 || move.EndX > 5) || (move.EndY < 2 || move.EndY > 5))
+                    {
+                        score -= 10;
+                        Console.WriteLine($"Knight/Bishop not helping center: -10, Total score: {score}");
+                    }
                 }
 
-                // Belöna kontroll av centrum
-                score += EvaluateControlOfMiddle(move.Piece, move.StartX, move.StartY, Board);
-
-                // Straffa kungsdrag
-                if (move.Piece is King)
-                {
-                    score -= 100;
-                }
-
+                // Debug: Begränsa och logga slutvärden
+                Console.WriteLine($"Final score for move: {score}");
                 return score;
             }
+
+
+
+            private int RewardMoveTowardsCenter(int x, int y)
+            {
+                // Kontrollera att positionen är inom brädet
+                if (x < 0 || x >= 8 || y < 0 || y >= 8)
+                {
+                    Console.WriteLine($"Invalid position: ({x},{y}), returning 0");
+                    return 0;
+                }
+
+                // Centrala rutor och deras vikter
+                int[,] centerWeights = {
+        { 0, 1, 2, 3, 3, 2, 1, 0 },
+        { 1, 2, 3, 4, 4, 3, 2, 1 },
+        { 2, 3, 4, 5, 5, 4, 3, 2 },
+        { 3, 4, 5, 6, 6, 5, 4, 3 },
+        { 3, 4, 5, 6, 6, 5, 4, 3 },
+        { 2, 3, 4, 5, 5, 4, 3, 2 },
+        { 1, 2, 3, 4, 4, 3, 2, 1 },
+        { 0, 1, 2, 3, 3, 2, 1, 0 }
+    };
+
+                // Hämta vikten för positionen
+                int reward = centerWeights[x, y];
+                Console.WriteLine($"Reward for position ({x},{y}): {reward}");
+                return reward;
+            }
+
+
+
+
+
 
 
 
@@ -734,86 +857,223 @@ namespace Chess
             {
                 if (depth == 0)
                 {
-                    return EvaluateBoard(Board); // Pass the ChessBoard instance
+                    return EvaluateBoard(Board); // Utvärdera brädet som helhet
                 }
 
-                // Pass board and turn information
+                // Generera möjliga drag
                 List<Move> possibleMoves = GenerateMoves(Board.Board, isMaximizingPlayer);
 
-                if (isMaximizingPlayer)
+                int bestScore = isMaximizingPlayer ? int.MinValue : int.MaxValue;
+
+                foreach (Move move in possibleMoves)
                 {
-                    int maxEval = int.MinValue;
-                    foreach (Move move in possibleMoves)
+                    Board.SimulateMove(move);
+
+                    // Beräkna dragpoängen med de nya funktionerna
+                    int moveScore = 0;
+                    moveScore += EvaluateMoveSafetyIntegration(move.Piece, move.StartX, move.StartY, move.EndX, move.EndY, Board.Board);
+                    moveScore += EvaluateDevelopment(move.Piece, move.StartX, move.StartY);
+                    moveScore += EvaluateCenterControl(move.Piece, move.EndX, move.EndY, Board);
+                    moveScore += EvaluatePieceDevelopment(move.Piece, move.StartX, move.StartY, move.EndX, move.EndY);
+                    moveScore += PenalizePieceRetreat(move.Piece, move.StartX, move.StartY, move.EndX, move.EndY);
+                    moveScore += EvaluatePieceSafety(move.Piece, move.EndX, move.EndY, Board);
+
+                    // Kombinera dragpoängen med den rekursiva minimax-evalueringen
+                    int eval = moveScore + Minimax(depth - 1, !isMaximizingPlayer);
+                    Board.UndoSimulatedMove(move);
+
+                    // Maximera eller minimera beroende på spelare
+                    if (isMaximizingPlayer)
                     {
-                        Board.SimulateMove(move);
-                        int eval = Minimax(depth - 1, false);
-                        Board.UndoSimulatedMove(move);
-                        maxEval = Math.Max(maxEval, eval);
+                        bestScore = Math.Max(bestScore, eval);
                     }
-                    return maxEval;
-                }
-                else
-                {
-                    int minEval = int.MaxValue;
-                    foreach (Move move in possibleMoves)
+                    else
                     {
-                        Board.SimulateMove(move);
-                        int eval = Minimax(depth - 1, true);
-                        Board.UndoSimulatedMove(move);
-                        minEval = Math.Min(minEval, eval);
+                        bestScore = Math.Min(bestScore, eval);
                     }
-                    return minEval;
                 }
+
+                return bestScore;
             }
 
 
 
-            // Optimizing AI move calculation by prioritizing free captures and assuming opponent will do the same.
+
+
 
             private int AlphaBeta(int depth, int alpha, int beta, bool isMaximizingPlayer)
             {
+                Console.WriteLine($"AlphaBeta called with depth: {depth}, alpha: {alpha}, beta: {beta}, maximizing: {isMaximizingPlayer}");
+
                 if (depth == 0)
-                    return QuiescenceSearch(alpha, beta); // Use Quiescence Search for better static evaluation
+                {
+                    int quiescenceScore = QuiescenceSearch(alpha, beta);
+                    Console.WriteLine($"Depth 0 reached, Quiescence score: {quiescenceScore}");
+                    return quiescenceScore;
+                }
 
                 ulong currentHash = ComputeZobristHash(Board.Board);
                 if (TryGetTransposition(currentHash, depth, out int transpositionScore))
-                    return transpositionScore; // Retrieve score if position has been analyzed
+                {
+                    Console.WriteLine($"Transposition table hit for hash: {currentHash}, score: {transpositionScore}");
+                    return transpositionScore;
+                }
 
                 List<Move> possibleMoves = GenerateMoves(Board.Board, isMaximizingPlayer);
                 possibleMoves = OrderMoves(possibleMoves, Board); // Prioritize free captures and strong moves
+
+                Console.WriteLine($"Generated {possibleMoves.Count} possible moves at depth {depth}");
 
                 int bestScore = isMaximizingPlayer ? int.MinValue : int.MaxValue;
 
                 foreach (var move in possibleMoves)
                 {
+                    Console.WriteLine($"Evaluating move: {move.StartX},{move.StartY} -> {move.EndX},{move.EndY}");
+
                     if (IsFreeCapture(move, isMaximizingPlayer))
                     {
-                        return isMaximizingPlayer ? int.MaxValue : int.MinValue; // Prioritize free captures immediately
+                        int freeCaptureScore = isMaximizingPlayer ? 10000 : -10000;
+                        Console.WriteLine($"Free capture detected for move: {move.StartX},{move.StartY} -> {move.EndX},{move.EndY}, Free capture score: {freeCaptureScore}");
+                        return freeCaptureScore;
                     }
 
                     Board.SimulateMove(move); // Simulate the move
-                    int eval = AlphaBeta(depth - 1, alpha, beta, !isMaximizingPlayer);
+
+                    // Evaluate the move using additional evaluation methods
+                    int moveScore = 0;
+                    moveScore += EvaluateMoveSafetyIntegration(move.Piece, move.StartX, move.StartY, move.EndX, move.EndY, Board.Board);
+                    moveScore += EvaluateDevelopment(move.Piece, move.StartX, move.StartY);
+                    moveScore += EvaluateCenterControl(move.Piece, move.EndX, move.EndY, Board);
+                    moveScore += EvaluatePieceDevelopment(move.Piece, move.StartX, move.StartY, move.EndX, move.EndY);
+                    moveScore += PenalizePieceRetreat(move.Piece, move.StartX, move.StartY, move.EndX, move.EndY);
+                    moveScore += EvaluatePieceSafety(move.Piece, move.EndX, move.EndY, Board);
+
+                    Console.WriteLine($"Move score before recursion: {moveScore}");
+
+                    int eval = moveScore + AlphaBeta(depth - 1, alpha, beta, !isMaximizingPlayer);
+
                     Board.UndoSimulatedMove(move); // Undo the simulated move
+
+                    Console.WriteLine($"Move: {move.StartX},{move.StartY} -> {move.EndX},{move.EndY}, Eval: {eval}, BestScore: {bestScore}");
 
                     if (isMaximizingPlayer)
                     {
                         bestScore = Math.Max(bestScore, eval);
                         alpha = Math.Max(alpha, eval);
+                        Console.WriteLine($"Updated alpha: {alpha}");
                     }
                     else
                     {
                         bestScore = Math.Min(bestScore, eval);
                         beta = Math.Min(beta, eval);
+                        Console.WriteLine($"Updated beta: {beta}");
                     }
 
                     if (beta <= alpha)
+                    {
+                        Console.WriteLine($"Pruning branch at move: {move.StartX},{move.StartY} -> {move.EndX},{move.EndY}, beta: {beta}, alpha: {alpha}");
                         break; // Prune branches
+                    }
                 }
 
                 // Store the result in the transposition table
                 StoreInTranspositionTable(currentHash, depth, bestScore);
+                Console.WriteLine($"AlphaBeta returning best score: {bestScore} at depth: {depth}");
                 return bestScore;
             }
+
+
+
+
+
+
+
+
+
+            public List<(int startX, int startY, int endX, int endY)> GetAiMoves()
+            {
+                List<(int startX, int startY, int endX, int endY)> availableMoves = new List<(int, int, int, int)>();
+
+                for (int x = 0; x < BoardSize; x++)
+                {
+                    for (int y = 0; y < BoardSize; y++)
+                    {
+                        ChessPiece piece = Board.Board[x, y];
+                        if (piece != null && piece.IsWhite == IsWhite) // Endast AI:s egna pjäser
+                        {
+                            for (int endX = 0; endX < BoardSize; endX++)
+                            {
+                                for (int endY = 0; endY < BoardSize; endY++)
+                                {
+                                    if (piece.IsValidMove(Board.Board, x, y, endX, endY) &&
+                                        !IsInCheckAfterMove(Board.Board, x, y, endX, endY, IsWhite))
+                                    {
+                                        availableMoves.Add((x, y, endX, endY));
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+
+                return availableMoves;
+            }
+
+            private bool IsCheckmateAfterMove(ChessPiece[,] board, int startX, int startY, int endX, int endY, bool isWhite)
+            {
+                // Klona brädet för att simulera draget
+                ChessPiece[,] simulatedBoard = CloneBoard(board);
+                ChessPiece movingPiece = simulatedBoard[startX, startY];
+                simulatedBoard[endX, endY] = movingPiece;
+                simulatedBoard[startX, startY] = null;
+
+                // Kontrollera om motståndarens kung är i schackmatt
+                bool isCheckmate = !HasLegalMoves(simulatedBoard, !isWhite) &&
+                                   IsKingInCheck(simulatedBoard, !isWhite);
+
+                return isCheckmate;
+            }
+            public (int startX, int startY, int endX, int endY)? FindCheckmateMoveForAI()
+            {
+                List<(int startX, int startY, int endX, int endY)> availableMoves = GetAiMoves();
+
+                foreach (var move in availableMoves)
+                {
+                    if (IsCheckmateAfterMove(Board.Board, move.startX, move.startY, move.endX, move.endY, false))
+                    {
+                        return move; // Returnera schackmattsdraget
+                    }
+                }
+
+                return null; // Inga schackmattsdrag hittades
+            }
+            private bool HasLegalMoves(ChessPiece[,] board, bool isWhite)
+            {
+                for (int startX = 0; startX < BoardSize; startX++)
+                {
+                    for (int startY = 0; startY < BoardSize; startY++)
+                    {
+                        ChessPiece piece = board[startX, startY];
+                        if (piece != null && piece.IsWhite == isWhite)
+                        {
+                            // För varje pjäs, hitta alla giltiga drag
+                            for (int endX = 0; endX < BoardSize; endX++)
+                            {
+                                for (int endY = 0; endY < BoardSize; endY++)
+                                {
+                                    if (piece.IsValidMove(board, startX, startY, endX, endY) &&
+                                        !IsInCheckAfterMove(board, startX, startY, endX, endY, isWhite))
+                                    {
+                                        return true; // Om ett giltigt drag finns, returnera true
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+                return false; // Om inga giltiga drag finns, returnera false
+            }
+
 
 
             private int QuiescenceSearch(int alpha, int beta)
